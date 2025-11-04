@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Math Symbol Writer — Calc focus + Backspace fixed</title>
+<style>
+  :root { --bg:#0b0c10; --panel:#12131a; --ink:#e7e9ee; --muted:#9aa3b2; --accent:#6ee7ff; --edge:#1c1e29; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
+  .wrap{max-width:980px;margin:40px auto;padding:0 16px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  header h1{font-size:20px;margin:0}
+  .pill{font-size:12px;color:var(--panel);background:var(--accent);padding:2px 8px;border-radius:999px}
+  .muted{color:var(--muted);font-size:13px}
+
+  .card{background:var(--panel);border-radius:16px;padding:14px;border:1px solid var(--edge);box-shadow:0 1px 0 rgba(255,255,255,.03) inset}
+  #editor{min-height:300px;background:#0f1017;border:1px solid #242635;border-radius:12px;padding:12px;outline:none;white-space:pre-wrap;word-break:break-word}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  button{appearance:none;border:1px solid #2a2d3e;background:#161823;color:var(--ink);padding:8px 12px;border-radius:12px;cursor:pointer}
+  button:hover{border-color:#3a3f58}
+
+  /* Math primitives */
+  .frac{display:inline-flex;flex-direction:column;align-items:center;vertical-align:middle;line-height:1}
+  .frac .bar{width:100%;height:1px;background:#e7e9ee;margin:2px 0}
+  .sqrt{display:inline-flex;align-items:flex-end;vertical-align:middle;line-height:1}
+  .sqrt .rad{font-size:1.2em;margin-right:2px}
+  .sqrt .radicand{display:inline-block;border-top:1px solid #e7e9ee;padding-top:2px}
+  .sum{display:inline-flex;align-items:center;gap:2px;vertical-align:middle;line-height:1}
+  .mb{display:inline-block;vertical-align:middle}
+  .gap{display:inline-block}
+  .caretAnchor{display:inline-block}
+
+  /* Toggle */
+  .toggle{display:flex;align-items:center;gap:8px;margin:8px 0 12px}
+  .switch{position:relative;width:52px;height:28px}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#2a2d3e;border-radius:999px;transition:.2s}
+  .slider:before{position:absolute;content:"";height:22px;width:22px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+  input:checked + .slider{background:#26c6da}
+  input:checked + .slider:before{transform:translateX(24px)}
+  .warn{color:#ffd479;font-size:12px;margin-left:8px}
+
+  /* Two-column below the editor */
+  .below{display:grid;grid-template-columns: 1fr 280px;gap:12px;margin-top:14px}
+  @media (max-width: 860px){ .below{grid-template-columns:1fr;} }
+
+  /* Commands */
+  .commands{border:1px solid var(--edge);border-radius:14px;padding:12px;color:#062a33;background:#0d141a}
+  .commands h3{margin:0 0 10px 0;color:var(--accent);font-size:14px}
+  .cmd-bar{display:flex;flex-wrap:wrap;gap:10px}
+  .cmd{border:1px solid #1a222b;background:#0b1016;color:var(--accent);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.45;flex:0 1 auto}
+  .cmd b{color:#8be9ff}
+  code{background:#0f1017;border:1px solid #222434;border-radius:6px;padding:0 4px}
+
+  /* Compact Calculator */
+  .calcCard{background:#0f1017;border:1px solid #242635;border-radius:14px;padding:10px}
+  .calcTitle{font-size:13px;color:#9aa3b2;margin:0 0 6px 0}
+  .calcDisplay{width:100%;height:36px;border:1px solid #242635;border-radius:10px;background:#0b0c12;color:#e7e9ee;
+               font:18px/36px ui-monospace,Menlo,Consolas,monospace;padding:0 10px;text-align:right;overflow:hidden;white-space:nowrap}
+  .calcDisplay:focus{outline:2px solid #26c6da;outline-offset:2px}
+  .calcGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}
+  .key{height:32px;border:1px solid #2a2d3e;background:#161823;border-radius:10px;color:#e7e9ee;font:13px/32px system-ui;
+       cursor:pointer;text-align:center;user-select:none}
+  .key.op{background:#1a1d2a}
+  .key.eq{background:#1e2a37;border-color:#345}
+  .key.wide{grid-column:span 2}
+  .key:active{transform:translateY(1px)}
+  .calcHelp{color:#9aa3b2;font-size:11px;margin:6px 0 6px 0;text-align:right}
+
+  /* Report Problem (under calculator) */
+  .reportWrap{margin-top:6px}
+  .reportBtn{font-weight:700}
+  .reportPanel{margin-top:6px;display:none}
+  .reportPanel textarea{width:100%;min-height:90px;background:#0f1017;color:var(--ink);border:1px solid #242635;border-radius:10px;padding:8px;resize:vertical}
+  .success{color:#98ffa6;font-size:12px;margin-top:6px}
+  .error{color:#ff9b9b;font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Math Symbol Writer</h1>
+      <span class="pill">Enter-to-Confirm (recommended)</span>
+      <span class="muted">Turn off to convert live as you type.</span>
+    </header>
+
+    <section class="card">
+      <div class="toggle">
+        <label class="switch">
+          <input id="enterModeSwitch" type="checkbox" checked>
+          <span class="slider"></span>
+        </label>
+        <div id="modeNote" class="muted">Enter converts the latest command; if nothing matches, it inserts a newline.</div>
+        <div id="liveWarning" class="warn" style="display:none;">Live Replace is ON — converts while you type; Enter makes a newline.</div>
+      </div>
+
+      <div id="editor" contenteditable="true" spellcheck="false" aria-label="Math input area"></div>
+
+      <div class="row">
+        <button id="undoBtn">Undo</button>
+        <button id="redoBtn">Redo</button>
+        <button id="copyText">Copy (plain text)</button>
+        <button id="copyHTML">Copy (rich HTML)</button>
+        <button id="clear">Clear</button>
+        <span id="copied" class="muted"></span>
+      </div>
+
+      <div class="below">
+        <!-- Left: Commands -->
+        <div class="commands">
+          <h3>Commands</h3>
+          <div class="cmd-bar">
+            <div class="cmd"><b>Greek (type names)</b><br>
+              e.g. <code>alpha</code> → α, <code>OMEGA</code> → Ω. Also: <code>to</code> → <b>--&gt;</b>
+            </div>
+            <div class="cmd"><b>Ops & constants</b><br>
+              sum ∑ · product/prod ∏ · integral/int ∫ · grad ∇ · partial ∂ · sqrt √ · inf ∞ · ohm Ω · pi π · times × · cdot · · deg ° · perp ⟂ · angle ∠ · nought → ₀
+            </div>
+            <div class="cmd"><b>Relations & arrows</b><br>
+              <= ≤ · >= ≥ · != ≠ · == ≡ · ~= ≈ · -> → · <- ← · <-> ↔ · to →
+            </div>
+            <div class="cmd"><b>Sup/Sub</b><br>
+              x^10 → x¹⁰ · x^(n+1) → xⁿ⁺¹ · x_i → x<sub>i</sub> · y_(n+1) → y<sub>n+1</sub> · vnought → v₀
+            </div>
+            <div class="cmd"><b>Fractions</b><br>
+              a//b or (a)//(b). Sides can be long expressions: <code>3x^2+3y^x//x</code> + <code>29je//s</code>
+            </div>
+            <div class="cmd" style="flex:1 1 100%;">
+              <b>Greek names (lowercase / UPPERCASE):</b><br>
+              alpha (α/Α), beta (β/Β), gamma (γ/Γ), delta (δ/Δ), epsilon (ε/Ε), zeta (ζ/Ζ), eta (η/Η), theta (θ/Θ), iota (ι/Ι), kappa (κ/Κ), lambda (λ/Λ), mu (μ/Μ), nu (ν/Ν), xi (ξ/Ξ), pi (π/Π), rho (ρ/Ρ), sigma (σ/Σ), tau (τ/Τ), upsilon (υ/Υ), phi (φ/Φ), chi (χ/Χ), psi (ψ/Ψ), omega (ω/Ω)
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Compact Calculator + Report -->
+        <div class="calcCard">
+          <p class="calcTitle">Calculator</p>
+          <div id="calcDisplay" class="calcDisplay" tabindex="0" aria-label="Calculator display" title="Click to type with keyboard">0</div>
+          <div class="calcGrid">
+            <div class="key op" data-key="C">C</div>
+            <div class="key op" data-key="Backspace">⌫</div>
+            <div class="key op" data-key="/">÷</div>
+            <div class="key op" data-key="*">×</div>
+
+            <div class="key" data-key="7">7</div>
+            <div class="key" data-key="8">8</div>
+            <div class="key" data-key="9">9</div>
+            <div class="key op" data-key="-">−</div>
+
+            <div class="key" data-key="4">4</div>
+            <div class="key" data-key="5">5</div>
+            <div class="key" data-key="6">6</div>
+            <div class="key op" data-key="+">+</div>
+
+            <div class="key" data-key="1">1</div>
+            <div class="key" data-key="2">2</div>
+            <div class="key" data-key="3">3</div>
+            <div class="key eq" data-key="=">=</div>
+
+            <div class="key wide" data-key="0">0</div>
+            <div class="key" data-key=".">.</div>
+            <div class="key eq" data-key="Enter">=</div>
+          </div>
+          <div class="calcHelp">Keyboard: 0–9 . + − * /  Enter,  C, ⌫</div>
+
+          <!-- Report Problem (below calculator) -->
+          <div class="reportWrap">
+            <button id="reportBtn" class="reportBtn">Report Problem</button>
+            <div id="reportPanel" class="reportPanel">
+              <textarea id="reportMsg" placeholder="What did you type? What happened? What did you expect?"></textarea>
+              <div class="row" style="margin-top:6px">
+                <button id="reportSubmit">Submit</button>
+                <button id="reportCancel">Cancel</button>
+              </div>
+              <div id="reportStatus" class="muted"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+<script>
+/* ===== Editor core ===== */
+const ed = document.getElementById('editor');
+
+function getCaretOffset(root){
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return 0;
+  const r = sel.getRangeAt(0);
+  const pre = r.cloneRange();
+  pre.selectNodeContents(root);
+  pre.setEnd(r.endContainer, r.endOffset);
+  return pre.toString().length;
+}
+function rangeFromOffsets(root, start, end){
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  let node, idx = 0, startNode=null, startOff=0, endNode=null, endOff=0;
+  while ((node = walker.nextNode())){
+    const len = node.nodeValue.length;
+    if (!startNode && idx + len >= start){ startNode = node; startOff = start - idx; }
+    if (idx + len >= end){ endNode = node; endOff = end - idx; break; }
+    idx += len;
+  }
+  if (!startNode) { startNode = ed; startOff = 0; }
+  if (!endNode)   { endNode = startNode; endOff = startOff; }
+  const r = document.createRange();
+  try { r.setStart(startNode, startOff); r.setEnd(endNode, endOff); }
+  catch { r.selectNodeContents(root); r.collapse(false); }
+  return r;
+}
+function textSlice(root, start, end){ return rangeFromOffsets(root, start, end).toString(); }
+function insertAfter(refNode, newNode){
+  if (!refNode || !refNode.parentNode) return;
+  if (refNode.nextSibling) refNode.parentNode.insertBefore(newNode, refNode.nextSibling);
+  else refNode.parentNode.appendChild(newNode);
+}
+function placeCaretInTextNode(textNode, offset){
+  const sel = window.getSelection();
+  const r = document.createRange();
+  r.setStart(textNode, Math.min(offset, textNode.length));
+  r.collapse(true);
+  sel.removeAllRanges(); sel.addRange(r);
+}
+function replaceRangeWithHTML(start, end, html){
+  const r = rangeFromOffsets(ed, start, end);
+  r.deleteContents();
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  const frag = document.createDocumentFragment();
+  const nodes = Array.from(temp.childNodes);
+  nodes.forEach(n => frag.appendChild(n));
+  r.insertNode(frag);
+  let gap = null;
+  let last = nodes[nodes.length - 1] || null;
+  if (last && last.nodeType === 1 && last.classList.contains('gap')) gap = last;
+  if (!gap && last && last.previousSibling && last.previousSibling.classList && last.previousSibling.classList.contains('gap')) gap = last.previousSibling;
+  let anchor = (gap && gap.nextSibling && gap.nextSibling.classList && gap.nextSibling.classList.contains('caretAnchor')) ? gap.nextSibling : null;
+  if (!anchor){
+    anchor = document.createElement('span');
+    anchor.className = 'caretAnchor';
+    anchor.textContent = '\u200B';
+    if (gap) insertAfter(gap, anchor);
+    else if (last) insertAfter(last, anchor);
+  } else anchor.textContent = '\u200B';
+  let caretText = (anchor.nextSibling && anchor.nextSibling.nodeType === Node.TEXT_NODE) ? anchor.nextSibling : null;
+  if (!caretText){ caretText = document.createTextNode('\u200B'); insertAfter(anchor, caretText); }
+  placeCaretInTextNode(caretText, caretText.length);
+}
+
+/* superscripts/subscripts/greek/etc. (maps) */
+const supMap={'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','+':'⁺','-':'⁻','=':'⁼','(':'⁽',')':'⁾','n':'ⁿ','i':'ⁱ','a':'ᵃ','b':'ᵇ','c':'ᶜ','d':'ᵈ','e':'ᵉ','f':'ᶠ','g':'ᵍ','h':'ʰ','j':'ʲ','k':'ᵏ','l':'ˡ','m':'ᵐ','o':'ᵒ','p':'ᵖ','r':'ʳ','s':'ˢ','t':'ᵗ','u':'ᵘ','v':'ᵛ','w':'ʷ','x':'ˣ','y':'ʸ','z':'ᶻ','q':'q'};
+function esc(s){return s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+function toSuper(s){return s.split('').map(c=>supMap[c]??c).join('');}
+function toSuperSmart(s){const ok=[...s].every(c=>supMap[c]!==undefined);return ok?toSuper(s):`<sup>${esc(s)}</sup>`;}
+
+const greekLower={alpha:'α',beta:'β',gamma:'γ',delta:'δ',epsilon:'ε',zeta:'ζ',eta:'η',theta:'θ',iota:'ι',kappa:'κ',lambda:'λ',mu:'μ',nu:'ν',xi:'ξ',pi:'π',rho:'ρ',sigma:'σ',tau:'τ',upsilon:'υ',phi:'φ',chi:'χ',psi:'ψ',omega:'ω'};
+const greekUpper={ALPHA:'Α',BETA:'Β',GAMMA:'Γ',DELTA:'Δ',EPSILON:'Ε',ZETA:'Ζ',ETA:'Η',THETA:'Θ',IOTA:'Ι',KAPPA:'Κ',LAMBDA:'Λ',MU:'Μ',NU:'Ν',XI:'Ξ',PI:'Π',RHO:'Ρ',SIGMA:'Σ',TAU:'Τ',UPSILON:'Υ',PHI:'Φ',CHI:'Χ',PSI:'Ψ',OMEGA:'Ω'};
+const WORDS={sum:'∑',prod:'∏',int:'∫',integ:'∫',gradient:'∇',grad:'∇',partial:'∂',sqrt:'√',inf:'∞',times:'×',cdot:'·',deg:'°',perp:'⟂',angle:'∠',pi:'π',ohm:'Ω',nought:'₀'};
+
+function normalizeTokenOnce(tok){
+  let s=tok;
+  s=s.replace(/^partial\s+derivative$/i,'partial');
+  s=s.replace(/^square\s+root$/i,'sqrt');
+  s=s.replace(/^degrees?$/i,'deg');
+  const map={integral:'int',product:'prod',nabla:'grad',infinity:'inf',perpendicular:'perp'};
+  for(const k of Object.keys(map)){ if(new RegExp(`^${k}$`,'i').test(s)){ s=map[k]; break; } }
+  return s;
+}
+
+function wrapMB(inner){return `<span class="mb" contenteditable="false">${inner}</span><span class="gap">\u200B</span>`;}
+function makeFrac(a,b){return wrapMB(`<span class="frac"><span class="num">${a}</span><span class="bar"></span><span class="den">${b}</span></span>`);}
+function makeSqrt(inner){return wrapMB(`<span class="sqrt"><span class="rad">√</span><span class="radicand">${inner}</span></span>`);}
+function makeSum(bottom,top){return wrapMB(`<span class="sum"><span class="sig">∑</span><span class="lims"><sub>${bottom}</sub><sup>${top}</sup></span></span>`);}
+
+/* mode */
+let enterMode=true;
+const enterSwitch=document.getElementById('enterModeSwitch');
+const liveWarn=document.getElementById('liveWarning');
+const modeNote=document.getElementById('modeNote');
+function updateModeUI(){ if(enterMode){liveWarn.style.display='none';modeNote.textContent='Enter converts the latest command; if nothing matches, it inserts a newline.';} else {liveWarn.style.display='block';modeNote.textContent='Live Replace is ON — converts while you type; Enter makes a newline.';} }
+enterSwitch.addEventListener('change',()=>{enterMode=enterSwitch.checked;updateModeUI();});
+
+let isConverting=false;
+function rtrimSpacesZWSP(s){const before=s.length;const out=s.replace(/[\u200B\s]+$/u,'');return {text:out,trim:before-out.length};}
+function getTailForMatching(){
+  const caret=getCaretOffset(ed); const WIN=600; const start=Math.max(0,caret-WIN);
+  const win=textSlice(ed,start,caret); const {text:winTrim}=rtrimSpacesZWSP(win);
+  const k1=winTrim.lastIndexOf('\u200B'); const k2=winTrim.lastIndexOf('\n'); const cut=Math.max(k1,k2)+1;
+  return {tail:winTrim.slice(cut),absStart:start+cut};
+}
+function convertLastAtCaret(){
+  if(isConverting) return false; isConverting=true;
+  try{
+    const {tail,absStart}=getTailForMatching(); if(!tail) return false;
+    let m;
+    if((m=tail.match(/([A-Za-z0-9])\^\(([^)]*)\)$/))){replaceRangeWithHTML(absStart+m.index,absStart+m.index+m[0].length,esc(m[1])+toSuperSmart(m[2]));return true;}
+    if((m=tail.match(/([A-Za-z0-9])\^([A-Za-z0-9+\-=_()]+)$/))){replaceRangeWithHTML(absStart+m.index,absStart+m.index+m[0].length,esc(m[1])+toSuperSmart(m[2]));return true;}
+    if((m=tail.match(/([A-Za-z0-9])_\(([^)]*)\)$/))){replaceRangeWithHTML(absStart+m.index,absStart+m.index+m[0].length,esc(m[1])+"<sub>"+esc(m[2])+"</sub>");return true;}
+    if((m=tail.match(/([A-Za-z0-9])_([A-Za-z0-9]+)$/))){replaceRangeWithHTML(absStart+m.index,absStart+m.index+m[0].length,esc(m[1])+"<sub>"+esc(m[2])+"</sub>");return true;}
+    if((m=tail.match(/([A-Za-z0-9_()+\-*/^]+)\s*\/\/\s*([A-Za-z0-9_()+\-*/^]+)$/))){replaceRangeWithHTML(absStart+m.index,absStart+m.index+m[0].length,makeFrac(esc(m[1]),esc(m[2])));return true;}
+    if((m=tail.match(/\(([^)]+)\)\s*\/\s*\(([^)]+)\)$/))){replaceRangeWithHTML(absStart+m.index,absStart+m.index+m[0].length,makeFrac(esc(m[1]),esc(m[2])));return true;}
+    if((m=tail.match(/(?:sqrt|√)([A-Za-z0-9_()+\-*/^]+)$/))){replaceRangeWithHTML(absStart+m.index,absStart+m.index+m[0].length,makeSqrt(esc(m[1])));return true;}
+    if((m=tail.match(/\bsum\s*([A-Za-z]+)\s*=\s*([^\s.]+)\s*\.\.\s*([^\s]+)$/))||(m=tail.match(/\bsum([A-Za-z]+)\s*=\s*([^\s.]+)\s*\.\.\s*([^\s]+)$/))){replaceRangeWithHTML(absStart+m.index,absStart+m.index+m[0].length,makeSum(`${esc(m[1])}=${esc(m[2])}`,esc(m[3])));return true;}
+    if((m=tail.match(/(<=|>=|!=|<->|->|<-|to)$/))){const map={'<=':'≤','>=':'≥','!=':'≠','<->':'↔','->':'→','<-':'←','to':'→'};replaceRangeWithHTML(absStart+m.index,absStart+m.index+m[0].length,wrapMB(map[m[1]]));return true;}
+    if((m=tail.match(/([A-Za-z]+)$/))){
+      const raw=m[1];
+      if(greekUpper[raw]){replaceRangeWithHTML(absStart+m.index,absStart+m.index+raw.length,wrapMB(greekUpper[raw]));return true;}
+      const low=raw.toLowerCase();
+      if(greekLower[low]){replaceRangeWithHTML(absStart+m.index,absStart+m.index+raw.length,wrapMB(greekLower[low]));return true;}
+      const canon=normalizeTokenOnce(raw).toLowerCase();
+      if(WORDS[canon]){replaceRangeWithHTML(absStart+m.index,absStart+m.index+raw.length,wrapMB(WORDS[canon]));return true;}
+    }
+    return false;
+  } finally { setTimeout(()=>{isConverting=false;},0); }
+}
+
+/* Backspace quality-of-life: if caret is just after a math block, delete it */
+ed.addEventListener('keydown',(e)=>{
+  if(e.key==='Backspace'){
+    const sel=window.getSelection(); if(!sel.rangeCount) return;
+    const r=sel.getRangeAt(0);
+    if(!r.collapsed) return; // let browser handle selections
+    // find the node just before caret
+    const caretNode=r.endContainer;
+    let prev = r.endContainer;
+    let offset = r.endOffset;
+    // If inside a text node, check previousSibling at the offset
+    if(prev.nodeType===Node.TEXT_NODE){
+      if(offset>0) return; // normal backspace inside text
+      prev = prev.previousSibling;
+    } else {
+      // element node; find child before offset
+      const childBefore = prev.childNodes[offset-1];
+      prev = childBefore || prev.previousSibling;
+    }
+    if(!prev) return;
+    // If we are right after the anchor text node, jump back one more
+    if(prev.classList && prev.classList.contains('caretAnchor')) prev = prev.previousSibling;
+    // If gap is here, the real block is before it
+    if(prev && prev.classList && prev.classList.contains('gap')) prev = prev.previousSibling;
+    if(prev && prev.classList && prev.classList.contains('mb')){
+      e.preventDefault();
+      const mb = prev;
+      // remove mb and any trailing gap+anchor
+      const gap = mb.nextSibling && mb.nextSibling.classList && mb.nextSibling.classList.contains('gap') ? mb.nextSibling : null;
+      const anchor = gap && gap.nextSibling && gap.nextSibling.classList && gap.nextSibling.classList.contains('caretAnchor') ? gap.nextSibling : null;
+      if(anchor && anchor.nextSibling && anchor.nextSibling.nodeType===Node.TEXT_NODE){
+        const caretText = anchor.nextSibling;
+        // place caret before caretText (which remains)
+        const sel2=window.getSelection(); const rr=document.createRange();
+        rr.setStart(caretText, 0); rr.collapse(true);
+        sel2.removeAllRanges(); sel2.addRange(rr);
+        // remove nodes
+        mb.remove(); if(gap) gap.remove(); if(anchor) anchor.remove();
+      } else {
+        mb.remove(); if(gap) gap.remove(); if(anchor) anchor.remove();
+      }
+    }
+  }
+});
+
+/* Enter, arrows, () autoinsert, live mode */
+ed.addEventListener('keydown', (e)=>{
+  if(e.key==='ArrowRight'){
+    const sel=window.getSelection(); if(!sel.rangeCount) return;
+    const node=sel.getRangeAt(0).endContainer;
+    const inside=node.nodeType!==1 ? (node.parentNode && node.parentNode.closest('.mb')) : node.closest('.mb');
+    if(inside){ e.preventDefault(); // move caret after block
+      let mb=inside;
+      let anchor=(mb.nextSibling && mb.nextSibling.classList && mb.nextSibling.classList.contains('gap'))? mb.nextSibling.nextSibling : null;
+      if(!(anchor && anchor.classList && anchor.classList.contains('caretAnchor'))) anchor=null;
+      let caretText=(anchor && anchor.nextSibling && anchor.nextSibling.nodeType===Node.TEXT_NODE)? anchor.nextSibling : null;
+      if(!caretText){ const txt=document.createTextNode('\u200B'); insertAfter(anchor || mb.nextSibling, txt); caretText=txt; }
+      placeCaretInTextNode(caretText, caretText.length);
+      return;
+    }
+  }
+  const FUNS=['sin','cos','tan','cot','sec','csc','log','ln','exp','max','min','sqrt'];
+  if(e.key===')'){
+    const sel=window.getSelection(); if(!sel.rangeCount) return;
+    const r=sel.getRangeAt(0), pre=r.cloneRange(); pre.setStart(ed,0);
+    const before=pre.toString(); const m=before.match(/(?:^|[\s(])([A-Za-z]{2,})$/);
+    if(m && FUNS.includes(m[1].toLowerCase())){
+      e.preventDefault(); document.execCommand('insertText',false,'()');
+      const pos=getCaretOffset(ed); const rr=rangeFromOffsets(ed,pos-1,pos-1);
+      const sel2=window.getSelection(); sel2.removeAllRanges(); sel2.addRange(rr);
+      if(!enterMode) convertLastAtCaret();
+      return;
+    }
+  }
+  if(e.key==='Enter'){
+    if(enterMode){ e.preventDefault(); const did=convertLastAtCaret(); if(!did) document.execCommand('insertLineBreak'); }
+    return;
+  }
+});
+ed.addEventListener('input', ()=>{ if(!enterMode && !isConverting) convertLastAtCaret(); snapshot(); });
+
+/* History & copy */
+const hist={stack:[],index:-1,freeze:false};
+function snapshot(){ if(hist.freeze) return; const state={html:ed.innerHTML, caret:getCaretOffset(ed)}; if(hist.index>=0&&hist.stack[hist.index].html===state.html) return; hist.stack=hist.stack.slice(0,hist.index+1); hist.stack.push(state); if(hist.stack.length>200) hist.stack.shift(); hist.index=hist.stack.length-1;}
+function restore(idx){ if(idx<0||idx>=hist.stack.length) return; hist.freeze=true; ed.innerHTML=hist.stack[idx].html; const caret=Math.min(hist.stack[idx].caret, ed.innerText.length); const r=rangeFromOffsets(ed, caret, caret); const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(r); hist.index=idx; hist.freeze=false;}
+document.getElementById('undoBtn').onclick=()=>restore(hist.index-1);
+document.getElementById('redoBtn').onclick=()=>restore(hist.index+1);
+document.addEventListener('keydown',(e)=>{const meta=e.ctrlKey||e.metaKey; if(meta && e.key.toLowerCase()==='z'){e.preventDefault(); if(e.shiftKey) restore(hist.index+1); else restore(hist.index-1);}});
+
+function copyFallback(text){const ta=document.createElement('textarea'); ta.value=text||''; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();}
+async function copyRich(){const html=ed.innerHTML; if(window.ClipboardItem){const item=new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([ed.innerText],{type:'text/plain'})}); await navigator.clipboard.write([item]).catch(()=>copyFallback(ed.innerText));} else copyFallback(ed.innerText);}
+async function copyPlain(){await navigator.clipboard.writeText(ed.innerText).catch(()=>copyFallback(ed.innerText));}
+document.getElementById('copyHTML').onclick=async()=>{await copyRich(); flash('Copied (rich HTML)!');};
+document.getElementById('copyText').onclick=async()=>{await copyPlain(); flash('Copied (plain text)!');};
+document.getElementById('clear').onclick=()=>{ed.innerHTML=''; snapshot(); ed.focus();};
+function flash(msg){const el=document.getElementById('copied'); el.textContent=msg; setTimeout(()=>el.textContent='',1400);}
+
+window.addEventListener('load', ()=>{ ed.innerHTML=''; updateModeUI(); snapshot(); });
+
+/* ===== Calculator (keyboard only when focused) ===== */
+const calcDisplay=document.getElementById('calcDisplay');
+let calcBuffer="0";
+let calcFocused=false;
+
+function setDisp(s){calcDisplay.textContent=s;}
+function appendKey(k){
+  if(k==='C'){calcBuffer='0';setDisp(calcBuffer);return;}
+  if(k==='Backspace'){calcBuffer=calcBuffer.length>1?calcBuffer.slice(0,-1):'0';setDisp(calcBuffer);return;}
+  if(k==='='||k==='Enter'){tryEval();return;}
+  const allowed=/[0-9.+\-*/]/; if(!allowed.test(k)) return;
+  if(calcBuffer==='0' && /[0-9.]/.test(k)) calcBuffer='';
+  const last=calcBuffer.slice(-1);
+  if(/[+\-*/]/.test(last) && /[+\-*/]/.test(k)){
+    if(!(k==='-' && (calcBuffer==='' || /[+\-*/(]$/.test(calcBuffer)))) return;
+  }
+  calcBuffer+=k; setDisp(calcBuffer);
+}
+function tryEval(){
+  const expr=calcBuffer; const res=evaluate(expr);
+  if(res==null || !isFinite(res)){ setDisp('Error'); calcBuffer='0'; }
+  else { let out=Math.round((res+Number.EPSILON)*1e12)/1e12; out=out.toString(); setDisp(out); calcBuffer=out; }
+}
+function evaluate(s){
+  if(!/^[0-9.+\-*/\s]+$/.test(s)) return null;
+  const tokens=[]; let i=0;
+  while(i<s.length){
+    const ch=s[i]; if(/\s/.test(ch)){i++;continue;}
+    if(/[+\-*/]/.test(ch)){tokens.push(ch);i++;continue;}
+    if(/[0-9.]/.test(ch)){let j=i,d=0;while(j<s.length&&/[0-9.]/.test(s[j])){if(s[j]==='.')d++;if(d>1)return null;j++;}tokens.push(s.slice(i,j));i=j;continue;}
+    return null;
+  }
+  const out=[]; for(let k=0;k<tokens.length;k++){const t=tokens[k]; if(t==='-' && (k===0||/[+\-*/]/.test(tokens[k-1]))){const nxt=tokens[k+1]; if(nxt==null||!/^[0-9.]+$/.test(nxt)) return null; out.push(String(-parseFloat(nxt))); k++;} else out.push(t);}
+  const prec={'+':1,'-':1,'*':2,'/':2}; const ops=[],rpn=[];
+  for(const t of out){ if(/^[0-9.\-]+$/.test(t) && !/^[+\-*/]$/.test(t)) rpn.push(parseFloat(t));
+    else if(t in prec){ while(ops.length && prec[ops[ops.length-1]]>=prec[t]) rpn.push(ops.pop()); ops.push(t);}
+    else return null; }
+  while(ops.length) rpn.push(ops.pop());
+  const st=[]; for(const t of rpn){ if(typeof t==='number') st.push(t);
+    else { const b=st.pop(), a=st.pop(); if(a==null||b==null) return null;
+      st.push(t==='+'?a+b:t==='-'?a-b:t==='*'?a*b:a/b); } }
+  return st.length===1?st[0]:null;
+}
+
+/* Click buttons */
+document.querySelectorAll('.key').forEach(k=>k.addEventListener('click',()=>appendKey(k.getAttribute('data-key'))));
+
+/* Focus management: calc only listens when display is focused */
+calcDisplay.addEventListener('focus', ()=>{ calcFocused=true; });
+calcDisplay.addEventListener('blur',  ()=>{ calcFocused=false; });
+
+/* If you click anywhere inside the editor, ensure calc stops listening */
+ed.addEventListener('focus', ()=>{ calcFocused=false; });
+
+/* Global keyboard -> route to calc ONLY if calcFocused and no modifiers */
+window.addEventListener('keydown', (e)=>{
+  if(!calcFocused) return;                    // not focused → ignore completely
+  if(e.metaKey || e.ctrlKey || e.altKey) return;
+  const k=e.key;
+  if((/^[0-9]$/.test(k))||k==='.'||k==='+'||k==='-'||k==='*'||k==='/'||k==='Enter'||k==='='||k==='Backspace'||k==='c'||k==='C'){
+    e.preventDefault();
+    appendKey(k==='c'?'C':k);
+  }
+});
+
+/* Clicking outside the calculator display should stop calc keyboard capture */
+document.addEventListener('mousedown',(e)=>{
+  const insideDisplay = e.target===calcDisplay;
+  if(!insideDisplay) calcFocused=false;
+});
+
+/* ===== Report Problem (mailto) ===== */
+const reportBtn=document.getElementById('reportBtn');
+const reportPanel=document.getElementById('reportPanel');
+const reportMsg=document.getElementById('reportMsg');
+const reportSubmit=document.getElementById('reportSubmit');
+const reportCancel=document.getElementById('reportCancel');
+const reportStatus=document.getElementById('reportStatus');
+
+reportBtn.addEventListener('click',()=>{
+  reportPanel.style.display = (reportPanel.style.display==='block') ? 'none' : 'block';
+  if(reportPanel.style.display==='block') reportMsg.focus();
+});
+reportCancel.addEventListener('click',()=>{
+  reportPanel.style.display='none';
+  reportStatus.textContent='';
+});
+reportSubmit.addEventListener('click',()=>{
+  const msg=(reportMsg.value||'').trim();
+  if(!msg){ reportStatus.textContent='Please write a short description.'; return; }
+  const subject=encodeURIComponent('Math Symbol Writer — Problem Report');
+  const context=`\n\n---\nEditor HTML (truncated):\n` + (ed.innerHTML||'').slice(0,4000);
+  const body=encodeURIComponent(msg+context);
+  const mailto=`mailto:oliver.c1639@gmail.com?subject=${subject}&body=${body}`;
+  reportPanel.style.display='none';
+  reportStatus.className='success';
+  reportStatus.textContent='Thanks! Your mail app should open — just hit send.';
+  window.location.href=mailto;
+});
+</script>
+</body>
+</html>
