@@ -18,14 +18,10 @@
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5494314750287277"
      crossorigin="anonymous"></script>
 
-<!-- Nerdamer (symbolic math) -->
+<!-- Nerdamer (symbolic math, integrals) -->
 <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/all.min.js"></script>
 
-<!-- MathQuill (editable math field) -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mathquill@0.10.1/build/mathquill.css">
-<script src="https://cdn.jsdelivr.net/npm/mathquill@0.10.1/build/mathquill.min.js"></script>
-
-<!-- MathJax (pretty rendering for preview + steps) -->
+<!-- MathJax for pretty preview + steps -->
 <script>
   window.MathJax = {
     tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]},
@@ -70,25 +66,24 @@
     position:relative;
   }
 
-  /* MathQuill editor styling */
-  #mathFieldWrapper{
+  #editor{
+    width:100%;
+    min-height:220px;
     background:#0f1017;
     border:1px solid #242635;
     border-radius:12px;
-    padding:10px;
-    min-height:60px;
-    cursor:text;
+    padding:12px;
+    outline:none;
+    color:var(--ink);
+    font:16px/1.6 ui-monospace,Menlo,Consolas,monospace;
+    resize:vertical;
   }
-  #mathFieldWrapper:focus-within{
+  #editor:focus{
     border-color:#26c6da;
     box-shadow:0 0 0 1px rgba(38,198,218,0.4);
   }
-  #mathField{
-    min-height:32px;
-  }
-  .mq-editable-field{
-    color:var(--ink);
-    font-size:20px;
+  #editor::placeholder{
+    color:#555b6b;
   }
 
   .row{
@@ -248,19 +243,22 @@
     <header>
       <h1>Integral Calculator</h1>
       <span class="pill">Enter = Solve</span>
-      <span class="muted">Shift+Enter (browser) won’t matter here; just use Enter. <b>int</b> → ∫ · <b>inf</b> → ∞</span>
+      <span class="muted"><b>int</b> → ∫ · <b>inf</b> → ∞ · Enter = solve line · Shift+Enter = newline</span>
     </header>
 
     <section class="card">
       <p class="muted">
-        Type an integral and press <b>Enter</b> to solve.
-        Right after typing <code>int</code>, press <b>↑</b> or <b>↓</b> to attach upper/lower bounds to the integral sign.
+        Type your integral in the box and press <b>Enter</b>. The answer is inserted <b>two lines below</b> that line.
+        Use <b>Shift+Enter</b> to add a newline without solving.
       </p>
 
-      <!-- MathQuill editor -->
-      <div id="mathFieldWrapper">
-        <span id="mathField"></span>
-      </div>
+      <textarea id="editor" spellcheck="false"
+        placeholder="Examples:
+int x^2 dx
+int int x*y dx dy
+int int int z dx dy dz
+int[0,∞] e^(-x) dx
+int_0^∞ 1/(1+x^4) dx"></textarea>
 
       <div class="row">
         <button id="clearBtn">Clear</button>
@@ -285,19 +283,14 @@
         <div class="help">
           <h3>How to write integrals:</h3>
           <ul>
-            <li><code>int x^2 dx</code> → <code>∫ x^2 dx</code> (single integral)</li>
-            <li><code>int int x*y dx dy</code> → <code>∫ ∫ x*y dx dy</code> (double integral)</li>
+            <li><code>int x^2 dx</code> → ∫ x² dx (preview shows pretty math)</li>
+            <li><code>int int x*y dx dy</code> → double integral</li>
             <li><code>int int int z dx dy dz</code> → triple integral</li>
-            <li>Right after <code>int</code>, press <b>↑</b> or <b>↓</b> to create bounds on the integral sign.</li>
-            <li>Type <code>inf</code> to get <code>∞</code> (works in bounds).</li>
-            <li>Definite / improper integrals:
-              <ul>
-                <li><code>∫<sub>0</sub><sup>1</sup> x^2 dx</code></li>
-                <li><code>∫<sub>0</sub><sup>∞</sup> e^(-x) dx</code></li>
-                <li>or bracket form: <code>∫[0,∞] e^(-x) dx</code></li>
-              </ul>
-            </li>
-            <li>Superscripts & subscripts: use <code>^</code> and <code>_</code> (e.g. <code>x^2</code>, <code>a_1</code>).</li>
+            <li><code>int[0,1] x^2 dx</code> → definite integral</li>
+            <li><code>int[0,inf] e^(-x) dx</code> → improper (0 → ∞)</li>
+            <li><code>int_0^1 x^2 dx</code> also works for definite integrals</li>
+            <li>Type <code>inf</code> in bounds to get <code>∞</code> automatically; solver still understands it.</li>
+            <li>Superscripts / subscripts (like <code>x^2</code>, <code>a_1</code>) are rendered nicely in the preview and steps.</li>
           </ul>
         </div>
 
@@ -357,46 +350,7 @@
   </div>
 
 <script>
-/* ===== MathQuill setup ===== */
-const MQ = MathQuill.getInterface(2);
-const mathFieldSpan = document.getElementById('mathField');
-
-let typedWord     = '';
-let integralFresh = false; // True right after int→∫
-
-const mathField = MQ.MathField(mathFieldSpan, {
-  spaceBehavesLikeTab: true,
-  autoOperatorNames: 'sin cos tan log ln',
-  handlers: {
-    edit: () => updatePreview(),
-    keystroke: (key, evt) => {
-      // track word for 'int' and 'inf'
-      if (/^[a-zA-Z]$/.test(key)) {
-        typedWord += key.toLowerCase();
-        setTimeout(checkAutoWords, 0);
-      } else if (key === 'Backspace') {
-        typedWord = typedWord.slice(0, -1);
-      } else if (key === 'Enter') {
-        // Solve on Enter
-        evt.preventDefault();
-        solveCurrentExpression();
-        typedWord = '';
-        return false; // don't let MQ insert a newline
-      } else if (key === 'Up' || key === 'Down') {
-        if (integralFresh) {
-          evt.preventDefault();
-          handleIntegralArrow(key);
-          return false;
-        }
-        typedWord = '';
-      } else {
-        typedWord = '';
-      }
-      // allow MathQuill to handle keystroke normally
-    }
-  }
-});
-
+const editor       = document.getElementById('editor');
 const statusEl     = document.getElementById('status');
 const previewEl    = document.getElementById('preview');
 const stepsPanel   = document.getElementById('stepsPanel');
@@ -411,7 +365,6 @@ function flashStatus(msg){
   if (!msg) return;
   setTimeout(()=>{ statusEl.textContent=''; }, 2000);
 }
-
 function escHtml(s){
   return String(s).replace(/[&<>]/g, ch => (
     ch === '&' ? '&amp;' :
@@ -420,9 +373,11 @@ function escHtml(s){
   ));
 }
 
-/* ASCII-ish → TeX-ish for MathJax */
+/* === Preview (MathJax) === */
 function exprToTex(s){
   let t = String(s);
+  t = t.replace(/∫/g, '\\int ');
+  t = t.replace(/∞/g, '\\infty ');
   t = t.replace(/\^(\d+)/g, '^{$1}');
   t = t.replace(/_(\d+)/g, '_{$1}');
   t = t.replace(/pi\b/g, '\\pi');
@@ -433,7 +388,19 @@ function exprToTex(s){
   t = t.replace(/ln\(/g, '\\ln(');
   return t;
 }
-
+function updatePreview(){
+  const text = editor.value;
+  if (!text.trim()){
+    previewEl.innerHTML = '<span class="muted">Start typing above to see formatted math here.</span>';
+    return;
+  }
+  const lines = text.split('\n').map(exprToTex);
+  const tex = lines.join(' \\\\ ');
+  previewEl.textContent = '$$' + tex + '$$';
+  if (window.MathJax && window.MathJax.typesetPromise) {
+    MathJax.typesetPromise([previewEl]).catch(()=>{});
+  }
+}
 function updateSteps(html){
   lastStepsHTML = html || '<p class="muted">No steps available for this input.</p>';
   stepsContent.innerHTML = lastStepsHTML;
@@ -442,79 +409,85 @@ function updateSteps(html){
   }
 }
 
-function updatePreview(){
-  const latex = mathField.latex();
-  if (!latex.trim()){
-    previewEl.innerHTML = '<span class="muted">Start typing above to see formatted math here.</span>';
-    return;
-  }
-  const display = '$$' + latex + '$$';
-  previewEl.textContent = display;
-  if (window.MathJax && window.MathJax.typesetPromise) {
-    MathJax.typesetPromise([previewEl]).catch(()=>{});
-  }
-}
+/* === Auto replace: int -> ∫, inf -> ∞ === */
+editor.addEventListener('keydown', (e)=>{
+  const value = editor.value;
+  const pos   = editor.selectionStart;
 
-/* ===== Auto words: int → ∫, inf → ∞ ===== */
-function checkAutoWords(){
-  if (typedWord.endsWith('int')) {
-    // remove 'int'
-    for (let i=0;i<3;i++) mathField.keystroke('Backspace');
-    // insert ∫ with a following space
-    mathField.cmd('\\int');
-    mathField.write(' ');
-    integralFresh = true;  // enable arrow-based bounds once
-    return;
-  }
-  if (typedWord.endsWith('inf')) {
-    for (let i=0;i<3;i++) mathField.keystroke('Backspace');
-    mathField.cmd('\\infty');
-    typedWord = '';
-    return;
-  }
-}
-
-/* ===== Integral bounds arrow behavior ===== */
-function handleIntegralArrow(key){
-  // move into the integral symbol
-  mathField.keystroke('Left');
-
-  if (key === 'Up') {
-    // bottom then top, end at top
-    mathField.keystroke('_');
-    mathField.keystroke('Right');
-    mathField.keystroke('^');
-  } else if (key === 'Down') {
-    // top then bottom, end at bottom
-    mathField.keystroke('^');
-    mathField.keystroke('Right');
-    mathField.keystroke('_');
+  // int → ∫
+  if (e.key === 't'){ // user finishes typing "int"
+    if (pos >= 2 && value.slice(pos-2, pos) === 'in'){
+      e.preventDefault();
+      const before = value.slice(0, pos-2);
+      const after  = value.slice(pos);
+      // add a small space before ∫ if needed
+      const prevChar = before.slice(-1);
+      const prefixSpace = prevChar && !/\s/.test(prevChar) ? ' ' : '';
+      const replacement = prefixSpace + '∫ ';
+      editor.value = before + replacement + after;
+      const newPos = (before + replacement).length;
+      editor.selectionStart = editor.selectionEnd = newPos;
+      updatePreview();
+      return;
+    }
   }
 
-  integralFresh = false;
-}
+  // inf → ∞
+  if (e.key === 'f'){ // user finishes typing "inf"
+    if (pos >= 2 && value.slice(pos-2, pos) === 'in'){
+      e.preventDefault();
+      const before = value.slice(0, pos-2);
+      const after  = value.slice(pos);
+      const replacement = '∞';
+      editor.value = before + replacement + after;
+      const newPos = (before + replacement).length;
+      editor.selectionStart = editor.selectionEnd = newPos;
+      updatePreview();
+      return;
+    }
+  }
 
-/* ===== Latex → Nerdamer-friendly text ===== */
-function latexToPlain(latex){
-  let s = latex;
-  s = s.replace(/\\left/g, '');
-  s = s.replace(/\\right/g, '');
-  s = s.replace(/\\,/g, '');
-  s = s.replace(/\\!/g, '');
-  s = s.replace(/\\ /g, ' ');
-  s = s.replace(/\\cdot/g, '*');
-  s = s.replace(/\\times/g, '*');
-  s = s.replace(/\\pi/g, 'pi');
-  s = s.replace(/\\infty/g, 'Infinity');
-  s = s.replace(/\\sin/g, 'sin');
-  s = s.replace(/\\cos/g, 'cos');
-  s = s.replace(/\\tan/g, 'tan');
-  s = s.replace(/\\log/g, 'log');
-  s = s.replace(/\\ln/g, 'ln');
-  s = s.replace(/\\frac{([^}]*)}{([^}]*)}/g, '(($1)/($2))');
-  return s;
-}
+  // Enter: solve current line (unless Shift+Enter)
+  if (e.key === 'Enter' && !e.shiftKey){
+    e.preventDefault();
+    const pos = editor.selectionStart;
+    const value = editor.value;
 
+    const lineStart = value.lastIndexOf('\n', pos-1) + 1;
+    let lineEnd = value.indexOf('\n', pos);
+    if (lineEnd === -1) lineEnd = value.length;
+
+    const line = value.slice(lineStart, lineEnd);
+    if (!line.trim()){
+      // just insert newline
+      editor.value = value.slice(0,pos) + '\n' + value.slice(pos);
+      const newPos = pos + 1;
+      editor.selectionStart = editor.selectionEnd = newPos;
+      updatePreview();
+      return;
+    }
+
+    const {answer, stepsHTML} = solveIntegralFromLine(line);
+    lastAnswer = answer;
+    updateSteps(stepsHTML);
+
+    const beforeLineEnd = value.slice(0, lineEnd);
+    const afterLineEnd  = value.slice(lineEnd);
+    const insertion     = '\n\n= ' + answer;
+
+    editor.value = beforeLineEnd + insertion + afterLineEnd;
+    const newCaretPos = (beforeLineEnd + insertion).length;
+    editor.selectionStart = editor.selectionEnd = newCaretPos;
+
+    answerOutput.textContent = '= ' + answer;
+    updatePreview();
+    flashStatus('Solved integral.');
+  }
+});
+
+editor.addEventListener('input', updatePreview);
+
+/* === Integral solving === */
 function normalizeBound(v){
   const s = v.trim();
   if (/^(∞|\+?inf|\+?Infinity)$/i.test(s)) return 'Infinity';
@@ -522,68 +495,39 @@ function normalizeBound(v){
   return s;
 }
 
-/* ===== Solve integral from LaTeX ===== */
-function solveIntegralFromLatex(latex){
-  const plain = latexToPlain(latex);
-  const result = { answer:'', stepsHTML:'' };
-  const trim = (x)=>x.trim();
+function solveIntegralFromLine(rawLine){
+  const line = rawLine.trim();
+  const result = {answer:'',stepsHTML:''};
+  if (!line) return result;
 
-  try {
-    // direct nerdamer commands
-    if (/integrate\s*\(/.test(plain) || /defint\s*\(/.test(plain)) {
-      const res = nerdamer(plain).simplify();
+  try{
+    // direct nerdamer commands still allowed
+    if (/integrate\s*\(/.test(line) || /defint\s*\(/.test(line)){
+      const res = nerdamer(line).simplify();
       result.answer = res.toString();
-      const texRes = exprToTex(result.answer);
+      const texRes  = exprToTex(result.answer);
       result.stepsHTML = `
         <p><b>Input:</b></p>
-        <p><code>${escHtml(plain)}</code></p>
+        <p><code>${escHtml(line)}</code></p>
         <p><b>Result (simplified):</b></p>
         <p>$$${texRes}$$</p>`;
       return result;
     }
 
-    let s = plain.replace(/\s+/g,' ').trim();
+    let s = line.replace(/\s+/g,' ').trim();
 
-    // TeX-style definite integral with bounds: \int_{a}^{b} f(x) dx
-    let mTex = s.match(/^\\int\s*_{([^}]*)}\s*\^{([^}]*)}\s*(.+)d([a-zA-Z])\s*$/);
-    if (mTex) {
-      const aRaw = trim(mTex[1]);
-      const bRaw = trim(mTex[2]);
-      const expr = trim(mTex[3]);
-      const v    = trim(mTex[4]);
-      const a    = normalizeBound(aRaw);
-      const b    = normalizeBound(bRaw);
+    // Replace 'int' at start with ∫ to standardize if user didn't trigger auto-convert
+    s = s.replace(/^int\b/, '∫');
 
-      const F   = nerdamer.integrate(expr, v).simplify();
-      const val = nerdamer.defint(expr, v, a, b).simplify();
-
-      const texIntegral = `\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(expr)}\\, d${v}`;
-      const texF   = exprToTex(F.toString());
-      const texVal = exprToTex(val.toString());
-
-      result.answer = val.toString();
-      result.stepsHTML = `
-        <p><b>Given definite integral:</b></p>
-        <p>$$${texIntegral}$$</p>
-        <p><b>1. Antiderivative:</b></p>
-        <p>$$F(${v}) = ${texF}$$</p>
-        <p><b>2. Evaluate at bounds:</b></p>
-        <p>$$\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(expr)}\\, d${v}
-          = F(${exprToTex(b)}) - F(${exprToTex(a)})$$</p>
-        <p><b>3. Final result:</b></p>
-        <p>$$${texVal}$$</p>`;
-      return result;
-    }
-
-    // Bracket-style definite integral: \int[a,b] f(x) dx
-    let mBr = s.match(/^\\int\[\s*([^,]+)\s*,\s*([^\]]+)\]\s*(.+)d([a-zA-Z])\s*$/);
-    if (mBr) {
-      const aRaw = trim(mBr[1]);
-      const bRaw = trim(mBr[2]);
-      const expr = trim(mBr[3]);
-      const v    = trim(mBr[4]);
-      const a    = normalizeBound(aRaw);
-      const b    = normalizeBound(bRaw);
+    // 1) bracket-style: ∫[a,b] f(x) dx
+    let mBr = s.match(/^∫\s*\[\s*([^,]+)\s*,\s*([^\]]+)\s*\]\s*(.+)\s+d([a-zA-Z])$/);
+    if (mBr){
+      const aRaw = mBr[1].trim();
+      const bRaw = mBr[2].trim();
+      const expr = mBr[3].trim();
+      const v    = mBr[4].trim();
+      const a = normalizeBound(aRaw);
+      const b = normalizeBound(bRaw);
 
       const F   = nerdamer.integrate(expr, v).simplify();
       const val = nerdamer.defint(expr, v, a, b).simplify();
@@ -598,7 +542,7 @@ function solveIntegralFromLatex(latex){
         <p>$$${texIntegral}$$</p>
         <p><b>1. Antiderivative:</b></p>
         <p>$$F(${v}) = ${texF}$$</p>
-        <p><b>2. Evaluate at bounds:</b></p>
+        <p><b>2. Evaluate at the bounds:</b></p>
         <p>$$\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(expr)}\\, d${v}
           = F(${exprToTex(b)}) - F(${exprToTex(a)})$$</p>
         <p><b>3. Final result:</b></p>
@@ -606,19 +550,79 @@ function solveIntegralFromLatex(latex){
       return result;
     }
 
-    // Count integrals to distinguish single vs iterated
-    const intMatches = s.match(/\\int/g) || [];
-    const intCount   = intMatches.length;
+    // 2) TeX-style within text: int_0^1 x^2 dx  OR  ∫_0^1 x^2 dx
+    let mTex = s.match(/^(?:int|∫)\s*_(\S+)\s*\^(\S+)\s+(.+)\s+d([a-zA-Z])$/);
+    if (mTex){
+      const aRaw = mTex[1];
+      const bRaw = mTex[2];
+      const expr = mTex[3].trim();
+      const v    = mTex[4].trim();
+      const a = normalizeBound(aRaw.replace(/[{}]/g,''));
+      const b = normalizeBound(bRaw.replace(/[{}]/g,''));
 
-    // single indefinite: \int f(x) dx
-    const mIndef = s.match(/^\\int\s+(.+)\s+d([a-zA-Z])\s*$/);
-    if (mIndef && intCount === 1) {
-      const expr = trim(mIndef[1]);
-      const v    = trim(mIndef[2]);
-      const F    = nerdamer.integrate(expr, v).simplify();
+      const F   = nerdamer.integrate(expr, v).simplify();
+      const val = nerdamer.defint(expr, v, a, b).simplify();
+
+      const texIntegral = `\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(expr)}\\, d${v}`;
+      const texF   = exprToTex(F.toString());
+      const texVal = exprToTex(val.toString());
+
+      result.answer = val.toString();
+      result.stepsHTML = `
+        <p><b>Given definite integral:</b></p>
+        <p>$$${texIntegral}$$</p>
+        <p><b>1. Antiderivative:</b></p>
+        <p>$$F(${v}) = ${texF}$$</p>
+        <p><b>2. Evaluate at the bounds:</b></p>
+        <p>$$\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(expr)}\\, d${v}
+          = F(${exprToTex(b)}) - F(${exprToTex(a)})$$</p>
+        <p><b>3. Final result:</b></p>
+        <p>$$${texVal}$$</p>`;
+      return result;
+    }
+
+    // count integrals: "∫ ∫ ..." or "int int ..."
+    let count = 0;
+    let tmp = s;
+    tmp = tmp.replace(/^int\b/, '∫');
+    const pieces = tmp.split(/\s+/);
+    for (const w of pieces){
+      if (w === '∫') count++;
+      else break;
+    }
+
+    if (count === 0){
+      throw new Error('Line not recognized as an integral. Start with "int" or "∫".');
+    }
+
+    // strip leading integrals
+    let rest = tmp.replace(/^(∫\s*)+/, '');
+    let expr = rest.trim();
+    const vars = [];
+
+    // peel off trailing d<var>
+    while (true){
+      const m = expr.match(/^(.*)\bd([a-zA-Z])\s*$/);
+      if (!m) break;
+      vars.push(m[2].trim());
+      expr = m[1].trim();
+    }
+
+    if (vars.length === 0){
+      throw new Error('Could not find dx, dy, dz ... at end.');
+    }
+
+    if (vars.length !== count){
+      throw new Error(`Found ${count} integral sign(s) but ${vars.length} variable(s).`);
+    }
+
+    // single indefinite integral
+    if (count === 1){
+      const v = vars[0];
+      const F = nerdamer.integrate(expr, v).simplify();
       result.answer = F.toString();
-      const texInt  = `\\int ${exprToTex(expr)}\\, d${v}`;
-      const texF    = exprToTex(result.answer);
+      const texInt = `\\int ${exprToTex(expr)}\\, d${v}`;
+      const texF   = exprToTex(result.answer);
       result.stepsHTML = `
         <p><b>Indefinite integral:</b></p>
         <p>$$${texInt}$$</p>
@@ -627,56 +631,38 @@ function solveIntegralFromLatex(latex){
       return result;
     }
 
-    // iterated indefinite: \int \int ... dx dy ...
-    if (intCount > 1) {
-      let rest = s.replace(/^(?:\\int\s*)+/, '');
-      let expr = trim(rest);
-      const vars = [];
-
-      while (true) {
-        const m = expr.match(/^(.*)\bd([a-zA-Z])\s*$/);
-        if (!m) break;
-        vars.push(trim(m[2]));
-        expr = trim(m[1]);
-      }
-
-      if (!vars.length) throw new Error('Could not find dx, dy, dz, ... at end.');
-      if (vars.length !== intCount) throw new Error(`Found ${intCount} integrals but ${vars.length} variables.`);
-
-      let resExpr = expr;
-      const intermediate = [];
-
-      for (let k=vars.length-1;k>=0;k--){
-        const v = vars[k];
-        resExpr = nerdamer.integrate(resExpr, v).toString();
-        intermediate.push({ v, expr: resExpr });
-      }
-
-      const finalExpr = nerdamer(resExpr).simplify();
-      result.answer = finalExpr.toString();
-
-      const typedOrder = vars.slice().reverse();
-      const texOriginal =
-        `${'\\int '.repeat(intCount)} ${exprToTex(expr)}\\, ${typedOrder.map(v => 'd'+v).join('\\, ')}`;
-      const texSteps = intermediate.map((step, idx) => {
-        const v = step.v;
-        const texF = exprToTex(step.expr);
-        return `<p><b>${idx+1}. Integrate w.r.t. ${v}:</b></p>
-                <p>$$${texF}$$</p>`;
-      }).join('');
-      const texFinal = exprToTex(finalExpr.toString());
-
-      result.stepsHTML = `
-        <p><b>Iterated integral:</b></p>
-        <p>$$${texOriginal}$$</p>
-        ${texSteps}
-        <p><b>Final result:</b></p>
-        <p>$$${texFinal}$$</p>`;
-      return result;
+    // iterated integral: double / triple
+    let resExpr = expr;
+    const intermediate = [];
+    for (let k = vars.length-1; k >= 0; k--){
+      const v = vars[k];
+      resExpr = nerdamer.integrate(resExpr, v).toString();
+      intermediate.push({v, expr: resExpr});
     }
 
-    throw new Error('Expression not recognized as an integral. Use "int" (→ ∫) with dx, dy, etc.');
-  } catch (err) {
+    const finalExpr = nerdamer(resExpr).simplify();
+    result.answer = finalExpr.toString();
+
+    const typedOrder = vars.slice().reverse();
+    const texOriginal =
+      `${'\\int '.repeat(count)} ${exprToTex(expr)}\\, ${typedOrder.map(v => 'd'+v).join('\\, ')}`;
+    const texSteps = intermediate.map((step, idx) => {
+      const v = step.v;
+      const texF = exprToTex(step.expr);
+      return `<p><b>${idx+1}. Integrate w.r.t. ${v}:</b></p>
+              <p>$$${texF}$$</p>`;
+    }).join('');
+    const texFinal = exprToTex(finalExpr.toString());
+
+    result.stepsHTML = `
+      <p><b>Iterated integral:</b></p>
+      <p>$$${texOriginal}$$</p>
+      ${texSteps}
+      <p><b>Final result:</b></p>
+      <p>$$${texFinal}$$</p>`;
+    return result;
+
+  } catch(err){
     const msg = 'Error: ' + (err && err.message ? err.message : String(err));
     result.answer = msg;
     result.stepsHTML = `<p>${escHtml(msg)}</p>`;
@@ -684,50 +670,32 @@ function solveIntegralFromLatex(latex){
   }
 }
 
-/* ===== Solve current expression (Enter) ===== */
-function solveCurrentExpression(){
-  const latex = mathField.latex().trim();
-  if (!latex) return;
-  const {answer, stepsHTML} = solveIntegralFromLatex(latex);
-  lastAnswer = answer;
-  updateSteps(stepsHTML);
-
-  if (answer && !answer.startsWith('Error:')) {
-    answerOutput.textContent = '= ' + answer;
-  } else {
-    answerOutput.textContent = answer;
-  }
-
-  flashStatus('Solved integral.');
-}
-
-/* ===== Clear + copy last answer ===== */
+/* === Buttons === */
 document.getElementById('clearBtn').addEventListener('click', ()=>{
-  mathField.latex('');
+  editor.value = '';
   lastAnswer = '';
   answerOutput.textContent = '';
   updateSteps('');
   updatePreview();
   flashStatus('Cleared.');
-  mathField.focus();
+  editor.focus();
 });
 
 document.getElementById('copyLastBtn').addEventListener('click', async ()=>{
-  if (!lastAnswer) {
+  if (!lastAnswer){
     flashStatus('No answer yet to copy.');
     return;
   }
-  try {
+  try{
     await navigator.clipboard.writeText(lastAnswer);
     flashStatus('Last answer copied.');
-  } catch {
+  }catch{
     flashStatus('Could not copy (clipboard blocked).');
   }
 });
 
-/* ===== Show steps dropdown toggle ===== */
 document.getElementById('showStepsBtn').addEventListener('click', ()=>{
-  if (stepsPanel.style.display === 'block') {
+  if (stepsPanel.style.display === 'block'){
     stepsPanel.style.display = 'none';
   } else {
     stepsPanel.style.display = 'block';
@@ -738,7 +706,7 @@ document.getElementById('showStepsBtn').addEventListener('click', ()=>{
   }
 });
 
-/* ===== Calculator ===== */
+/* === Calculator === */
 const calcDisplay = document.getElementById('calcDisplay');
 let calcBuffer    = '0';
 let calcFocused   = false;
@@ -774,7 +742,7 @@ function calcEvalExpr(s){
     if (/\s/.test(ch)){ i++; continue; }
     if (/[+\-*/]/.test(ch)){ tokens.push(ch); i++; continue; }
     if (/[0-9.]/.test(ch)){
-      let j=i, d=0;
+      let j=i,d=0;
       while (j<s.length && /[0-9.]/.test(s[j])){
         if (s[j]==='.') d++;
         if (d>1) return null;
@@ -838,7 +806,7 @@ calcDisplay.addEventListener('focus', ()=>{ calcFocused = true; });
 calcDisplay.addEventListener('blur',  ()=>{ calcFocused = false; });
 
 window.addEventListener('keydown', (e)=>{
-  if (!calcFocused) return;
+  if (!calcFocused) return; // only when calc has focus
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key;
   if ((/^[0-9]$/.test(k)) || k==='.' || k==='+' || k==='-' ||
@@ -849,7 +817,7 @@ window.addEventListener('keydown', (e)=>{
   }
 });
 
-/* ===== Report Problem (mailto) ===== */
+/* === Report Problem (mailto) === */
 const reportBtn     = document.getElementById('reportBtn');
 const reportPanel   = document.getElementById('reportPanel');
 const reportMsg     = document.getElementById('reportMsg');
@@ -862,12 +830,10 @@ reportBtn.addEventListener('click', ()=>{
   reportPanel.style.display = show ? 'block' : 'none';
   if (show) reportMsg.focus();
 });
-
 reportCancel.addEventListener('click', ()=>{
   reportPanel.style.display='none';
   reportStatus.textContent='';
 });
-
 reportSubmit.addEventListener('click', ()=>{
   const msg = (reportMsg.value || '').trim();
   if (!msg){
@@ -875,13 +841,12 @@ reportSubmit.addEventListener('click', ()=>{
     return;
   }
   const subject = encodeURIComponent('Integral Calculator — Problem Report');
-  const context = '\n\n---\nCurrent math (LaTeX):\n' +
-                  (mathField.latex() || '').slice(0, 4000);
+  const context = '\n\n---\nEditor text:\n' + (editor.value || '').slice(0,4000);
   const body    = encodeURIComponent(msg + context);
   const mailto  = `mailto:oliver.c1639@gmail.com?subject=${subject}&body=${body}`;
 
-  reportPanel.style.display = 'none';
-  reportStatus.textContent  = 'Thanks! Your mail app should open — just hit send.';
+  reportPanel.style.display='none';
+  reportStatus.textContent='Thanks! Your mail app should open — just hit send.';
   window.location.href = mailto;
 });
 
