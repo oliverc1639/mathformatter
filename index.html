@@ -21,6 +21,15 @@
 <!-- Nerdamer (symbolic math, integrals) -->
 <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/all.min.js"></script>
 
+<!-- MathJax for pretty superscripts/subscripts in steps -->
+<script>
+  window.MathJax = {
+    tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]},
+    svg: {fontCache: 'global'}
+  };
+</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
 <style>
   :root {
     --bg:#0b0c10; --panel:#12131a; --ink:#e7e9ee;
@@ -102,8 +111,21 @@
     font-size:12px;
   }
 
-  .answerLabel{
-    color:#6ee7ff;
+  ul{margin-top:6px;margin-bottom:0;padding-left:20px;}
+
+  /* Steps panel (read-only dropdown box) */
+  #stepsPanel{
+    display:none;
+    margin-top:12px;
+    border:1px solid #242635;
+    border-radius:12px;
+    padding:10px;
+    background:#0f1017;
+  }
+  #stepsTitle{
+    font-size:13px;
+    color:var(--muted);
+    margin-bottom:6px;
   }
 </style>
 </head>
@@ -112,7 +134,7 @@
     <header>
       <h1>Integral Calculator</h1>
       <span class="pill">Enter = Solve</span>
-      <span class="muted">Shift+Enter for a newline.</span>
+      <span class="muted">Shift+Enter for newline · <b>int␣</b> → ∫</span>
     </header>
 
     <section class="card">
@@ -125,25 +147,44 @@
       <textarea id="editor" spellcheck="false"
         aria-label="Integral input area"
         placeholder="Examples:
-∫ x^2 dx
-∫[0,1] x^2 dx
-integrate(sin(x), x)
+int x^2 dx
+int int x*y dx dy
+int int int z dx dy dz
+int[0,1] x^2 dx
+integrate(sin(x)^2, x)
 defint(exp(x), x, 0, 1)"></textarea>
 
       <div class="row">
         <button id="clearBtn">Clear</button>
         <button id="copyLastBtn">Copy last answer</button>
+        <button id="showStepsBtn">Show steps</button>
         <span id="status" class="muted"></span>
       </div>
 
+      <!-- Read-only steps dropdown -->
+      <div id="stepsPanel" aria-live="polite">
+        <div id="stepsTitle">Steps for last integral</div>
+        <div id="stepsContent"></div>
+      </div>
+
       <div class="help">
-        <b>Supported syntax (for now):</b>
+        <b>How to write integrals:</b>
         <ul>
-          <li><code>∫ x^2 dx</code> → indefinite integral w.r.t. x</li>
-          <li><code>∫[0,1] x^2 dx</code> → definite integral from 0 to 1</li>
-          <li><code>integrate(x^2, x)</code> → Nerdamer syntax</li>
-          <li><code>defint(x^2, x, 0, 1)</code> → definite integral (Nerdamer)</li>
-          <li>If you just type <code>x^2</code>, it assumes <code>∫ x^2 dx</code>.</li>
+          <li><code>int x^2 dx</code> → auto becomes <code>∫ x^2 dx</code> (single integral)</li>
+          <li><code>int int x*y dx dy</code> → <code>∫ ∫ x*y dx dy</code> (double integral)</li>
+          <li><code>int int int z dx dy dz</code> → triple integral</li>
+          <li><code>int[0,1] x^2 dx</code> → <code>∫[0,1] x^2 dx</code> (definite integral)</li>
+          <li>You can also use Nerdamer directly:
+            <ul>
+              <li><code>integrate(sin(x)^2, x)</code></li>
+              <li><code>defint(x^2+y^2, x, 0, 1)</code></li>
+            </ul>
+          </li>
+        </ul>
+        <b>Notes:</b>
+        <ul>
+          <li>For double/triple integrals, the order of <code>d...</code> at the end matches the iterated integrals.</li>
+          <li>If a line isn’t recognized as an integral, you’ll get an error instead of a guess.</li>
         </ul>
       </div>
 
@@ -170,55 +211,14 @@ defint(exp(x), x, 0, 1)"></textarea>
   </div>
 
 <script>
-/* ===== Integral solving logic ===== */
+/* ===== Helpers ===== */
+const editor     = document.getElementById('editor');
+const statusEl   = document.getElementById('status');
+const stepsPanel = document.getElementById('stepsPanel');
+const stepsContent = document.getElementById('stepsContent');
 
 let lastAnswer = '';
-
-function solveIntegralFromLine(rawLine){
-  const line = rawLine.trim();
-  if (!line) return '';
-
-  try {
-    let resExpr;
-
-    // Pattern 1: definite, bracket syntax  ∫[a,b] f(x) dx
-    // Example: ∫[0,1] x^2 dx
-    const mBracket = line.match(/^∫\s*\[\s*([^,]+)\s*,\s*([^\]]+)\s*\]\s*(.+)\s+d([a-zA-Z])$/);
-    if (mBracket) {
-      const a = mBracket[1].trim();
-      const b = mBracket[2].trim();
-      const f = mBracket[3].trim();
-      const v = mBracket[4].trim();
-      resExpr = nerdamer.defint(f, v, a, b);
-      return resExpr.toString();
-    }
-
-    // Pattern 2: indefinite pretty syntax  ∫ f(x) dx
-    // Example: ∫ x^2 dx
-    const mIndef = line.match(/^∫\s*(.+)\s+d([a-zA-Z])$/);
-    if (mIndef) {
-      const f = mIndef[1].trim();
-      const v = mIndef[2].trim();
-      resExpr = nerdamer.integrate(f, v);
-      return resExpr.toString();
-    }
-
-    // Pattern 3: direct Nerdamer call, e.g. integrate(...), defint(...)
-    if (/(^|[^a-zA-Z])integrate\s*\(/.test(line) || /(^|[^a-zA-Z])defint\s*\(/.test(line)) {
-      resExpr = nerdamer(line);
-      return resExpr.toString();
-    }
-
-    // Pattern 4: fallback — treat as integrand in x, ∫ line dx
-    resExpr = nerdamer.integrate(line, 'x');
-    return resExpr.toString();
-  } catch (err) {
-    return 'Error: ' + (err && err.message ? err.message : String(err));
-  }
-}
-
-const editor = document.getElementById('editor');
-const statusEl = document.getElementById('status');
+let lastStepsHTML = '';
 
 function flashStatus(msg){
   statusEl.textContent = msg;
@@ -226,6 +226,190 @@ function flashStatus(msg){
   setTimeout(()=>{ statusEl.textContent=''; }, 2000);
 }
 
+function escHtml(s){
+  return String(s).replace(/[&<>]/g, ch => (
+    ch === '&' ? '&amp;' :
+    ch === '<' ? '&lt;'  :
+    '&gt;'
+  ));
+}
+
+/* Cheap ASCII → TeX-ish for display in MathJax */
+function exprToTex(s){
+  let t = String(s);
+  t = t.replace(/pi\b/g, '\\pi');
+  t = t.replace(/sin\(/g, '\\sin(');
+  t = t.replace(/cos\(/g, '\\cos(');
+  t = t.replace(/tan\(/g, '\\tan(');
+  t = t.replace(/log\(/g, '\\log(');
+  t = t.replace(/ln\(/g, '\\ln(');
+  return t;
+}
+
+function updateSteps(html){
+  lastStepsHTML = html || '<p class="muted">No steps available for this input.</p>';
+  stepsContent.innerHTML = lastStepsHTML;
+  // Keep it hidden until user clicks "Show steps"
+  // but if it is already open, re-typeset.
+  if (stepsPanel.style.display === 'block') {
+    if (window.MathJax && window.MathJax.typesetPromise) {
+      MathJax.typesetPromise([stepsContent]).catch(()=>{});
+    }
+  }
+}
+
+/* ===== Auto-transform: 'int ' → '∫ ' ===== */
+editor.addEventListener('input', function(){
+  const value = editor.value;
+  const pos   = editor.selectionStart;
+
+  if (pos >= 4 && value.slice(pos-4, pos) === 'int ') {
+    const before = value.slice(0, pos-4);
+    const after  = value.slice(pos);
+    const newVal = before + '∫ ' + after;
+    const newPos = before.length + 2;  // '∫ ' is 2 chars
+
+    editor.value = newVal;
+    editor.selectionStart = editor.selectionEnd = newPos;
+  }
+});
+
+/* ===== Integral solving logic (single, double, triple, direct Nerdamer) ===== */
+
+function solveIntegralFromLine(rawLine){
+  const line = rawLine.trim();
+  const result = { answer: '', stepsHTML: '' };
+
+  if (!line) return result;
+
+  try {
+    /* 1. Direct Nerdamer calls (advanced usage) */
+    if (/(^|[^a-zA-Z])integrate\s*\(/.test(line) ||
+        /(^|[^a-zA-Z])defint\s*\(/.test(line)) {
+      const res = nerdamer(line).simplify();
+      result.answer = res.toString();
+      const texRes = exprToTex(result.answer);
+      result.stepsHTML = `
+        <p><b>Input (Nerdamer):</b></p>
+        <p><code>${escHtml(line)}</code></p>
+        <p><b>Result (simplified):</b></p>
+        <p>$$${texRes}$$</p>`;
+      return result;
+    }
+
+    /* 2. Definite integral with bracket syntax: ∫[a,b] f(x) dx */
+    const mBracket = line.match(/^∫\s*\[\s*([^,]+)\s*,\s*([^\]]+)\s*\]\s*(.+)\s+d([a-zA-Z])$/);
+    if (mBracket) {
+      const a = mBracket[1].trim();
+      const b = mBracket[2].trim();
+      const f = mBracket[3].trim();
+      const v = mBracket[4].trim();
+
+      const F = nerdamer.integrate(f, v).simplify();   // antiderivative
+      const val = nerdamer.defint(f, v, a, b).simplify();
+
+      const texIntegral = `\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(f)}\\, d${v}`;
+      const texF = exprToTex(F.toString());
+      const texVal = exprToTex(val.toString());
+
+      result.answer = val.toString();
+      result.stepsHTML = `
+        <p><b>Given definite integral:</b></p>
+        <p>$$${texIntegral}$$</p>
+        <p><b>1. Find an antiderivative:</b></p>
+        <p>$$F(${v}) = ${texF}$$</p>
+        <p><b>2. Evaluate at the bounds:</b></p>
+        <p>$$\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(f)}\\, d${v}
+            = F(${exprToTex(b)}) - F(${exprToTex(a)})$$</p>
+        <p><b>3. Final result:</b></p>
+        <p>$$${texVal}$$</p>
+      `;
+      return result;
+    }
+
+    /* 3. Iterated integrals (single / double / triple / etc.) using ∫ ... dx dy dz */
+    let s = line;
+    let i = 0;
+    let count = 0;
+    while (i < s.length) {
+      const ch = s[i];
+      if (ch === '∫') {
+        count++;
+        i++;
+      } else if (ch === ' ' || ch === '\t') {
+        i++;
+      } else {
+        break;
+      }
+    }
+
+    if (count > 0) {
+      let expr = s.slice(i).trim(); // stuff after the ∫ symbols
+      let vars = [];
+
+      // Peel off trailing "d<var>" blocks from right to left
+      while (true) {
+        const m = expr.match(/^(.*)\bd([a-zA-Z])\s*$/);
+        if (!m) break;
+        vars.push(m[2]);          // variable name (e.g. x, y, z)
+        expr = m[1].trim();       // remaining expression
+      }
+
+      if (vars.length === 0) {
+        throw new Error('Could not find variable(s) like dx, dy, dz at the end.');
+      }
+      if (vars.length !== count) {
+        throw new Error(`Found ${count} integral sign(s) but ${vars.length} variable(s).`);
+      }
+
+      // Integrate from inner to outer
+      let resExpr = expr;
+      const intermediate = [];
+      const integrOrder = [];
+
+      for (let k = vars.length - 1; k >= 0; k--) {
+        const v = vars[k];
+        resExpr = nerdamer.integrate(resExpr, v).toString();
+        intermediate.push({ v, expr: resExpr });
+        integrOrder.push(v);
+      }
+
+      const finalExpr = nerdamer(resExpr).simplify();
+      result.answer = finalExpr.toString();
+
+      const typedOrder = vars.slice().reverse();  // order as in "dx dy ..."
+      const texOriginal = `${'\\int '.repeat(count)} ${exprToTex(expr)}\\, ${typedOrder.map(v => 'd'+v).join('\\, ')}`;
+      const texSteps = intermediate.map((step, idx) => {
+        const v = step.v;
+        const texF = exprToTex(step.expr);
+        return `<p><b>${idx+1}. Integrate w.r.t. ${v}:</b></p>
+                <p>$$${texF}$$</p>`;
+      }).join('');
+
+      const texFinal = exprToTex(finalExpr.toString());
+
+      result.stepsHTML = `
+        <p><b>Iterated integral:</b></p>
+        <p>$$${texOriginal}$$</p>
+        ${texSteps}
+        <p><b>Final result:</b></p>
+        <p>$$${texFinal}$$</p>
+      `;
+      return result;
+    }
+
+    /* 4. Not recognized as an integral */
+    throw new Error('Line not recognized as an integral. Start with "int " (→ ∫) or use integrate(...)/defint(...).');
+
+  } catch (err) {
+    const msg = 'Error: ' + (err && err.message ? err.message : String(err));
+    result.answer = msg;
+    result.stepsHTML = `<p>${escHtml(msg)}</p>`;
+    return result;
+  }
+}
+
+/* ===== Enter behavior: solve + insert answer two lines below ===== */
 editor.addEventListener('keydown', function(e){
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -250,8 +434,9 @@ editor.addEventListener('keydown', function(e){
       return;
     }
 
-    const answer = solveIntegralFromLine(line) || '';
+    const { answer, stepsHTML } = solveIntegralFromLine(line);
     lastAnswer = answer;
+    updateSteps(stepsHTML);
 
     // Insert answer two lines below the current line:
     // [lineEnd]\n\n= answer
@@ -273,6 +458,7 @@ editor.addEventListener('keydown', function(e){
 document.getElementById('clearBtn').addEventListener('click', ()=>{
   editor.value = '';
   lastAnswer = '';
+  updateSteps('');
   flashStatus('Cleared.');
   editor.focus();
 });
@@ -287,6 +473,19 @@ document.getElementById('copyLastBtn').addEventListener('click', async ()=>{
     flashStatus('Last answer copied.');
   } catch {
     flashStatus('Could not copy (clipboard blocked).');
+  }
+});
+
+/* Show steps dropdown toggle */
+document.getElementById('showStepsBtn').addEventListener('click', ()=>{
+  if (stepsPanel.style.display === 'block') {
+    stepsPanel.style.display = 'none';
+  } else {
+    stepsPanel.style.display = 'block';
+    stepsContent.innerHTML = lastStepsHTML || '<p class="muted">No steps yet. Solve an integral first.</p>';
+    if (window.MathJax && window.MathJax.typesetPromise) {
+      MathJax.typesetPromise([stepsContent]).catch(()=>{});
+    }
   }
 });
 
