@@ -18,10 +18,14 @@
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5494314750287277"
      crossorigin="anonymous"></script>
 
-<!-- Nerdamer (symbolic math, integrals) -->
+<!-- Nerdamer (symbolic math) -->
 <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/all.min.js"></script>
 
-<!-- MathJax for pretty superscripts/subscripts & integrals -->
+<!-- MathQuill (editable math field) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mathquill@0.10.1/build/mathquill.css">
+<script src="https://cdn.jsdelivr.net/npm/mathquill@0.10.1/build/mathquill.min.js"></script>
+
+<!-- MathJax (pretty rendering for preview + steps) -->
 <script>
   window.MathJax = {
     tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]},
@@ -66,25 +70,25 @@
     position:relative;
   }
 
-  #editor{
-    width:100%;
-    min-height:220px;
+  /* MathQuill editor styling */
+  #mathFieldWrapper{
     background:#0f1017;
     border:1px solid #242635;
     border-radius:12px;
-    padding:12px;
-    outline:none;
-    color:var(--ink);
-    font:16px/1.6 ui-monospace,Menlo,Consolas,monospace;
-    resize:vertical;
-    white-space:pre-wrap;
+    padding:10px;
+    min-height:60px;
+    cursor:text;
   }
-  #editor:focus{
+  #mathFieldWrapper:focus-within{
     border-color:#26c6da;
     box-shadow:0 0 0 1px rgba(38,198,218,0.4);
   }
-  #editor::placeholder{
-    color:#555b6b;
+  #mathField{
+    min-height:32px;
+  }
+  .mq-editable-field{
+    color:var(--ink);
+    font-size:20px;
   }
 
   .row{
@@ -106,35 +110,25 @@
   }
   button:hover{border-color:#3a3f58}
 
-  .help{
-    margin-top:12px;
-    font-size:13px;
-    color:var(--muted);
+  #answerOutput{
+    margin-top:8px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;
   }
-  .help code{
-    background:#0f1017;
-    border:1px solid #222434;
-    border-radius:4px;
-    padding:0 4px;
-    font-size:12px;
-  }
-  ul{margin-top:6px;margin-bottom:0;padding-left:20px;}
 
-  /* Live preview of input (formatted math) */
+  #previewTitle{
+    font-size:12px;
+    color:var(--muted);
+    margin-top:12px;
+    margin-bottom:2px;
+  }
   #preview{
-    margin-top:10px;
+    margin-top:0;
     padding:10px;
     border-radius:10px;
     border:1px solid #242635;
     background:#0d1119;
     min-height:40px;
     font-size:15px;
-  }
-  #previewTitle{
-    font-size:12px;
-    color:var(--muted);
-    margin-top:8px;
-    margin-bottom:2px;
   }
 
   /* Steps panel (read-only dropdown box) */
@@ -152,12 +146,33 @@
     margin-bottom:6px;
   }
 
-  /* Calculator */
-  .calcWrapper{
-    margin-top:14px;
+  /* Bottom row: help + calculator on same Y */
+  .bottomRow{
     display:flex;
-    justify-content:flex-end;
+    gap:16px;
+    align-items:flex-start;
+    margin-top:14px;
   }
+  .help{
+    font-size:13px;
+    color:var(--muted);
+    flex:1;
+  }
+  .help code{
+    background:#0f1017;
+    border:1px solid #222434;
+    border-radius:4px;
+    padding:0 4px;
+    font-size:12px;
+  }
+  .help h3{
+    margin:0 0 6px 0;
+    font-size:14px;
+    color:var(--ink);
+  }
+  ul{margin-top:4px;margin-bottom:0;padding-left:20px;}
+
+  /* Calculator */
   .calcCard{
     background:#0f1017;
     border:1px solid #242635;
@@ -214,6 +229,18 @@
     margin:6px 0 0 0;
     text-align:right;
   }
+
+  /* Report */
+  #reportPanel textarea{
+    width:100%;
+    min-height:90px;
+    background:#0f1017;
+    color:var(--ink);
+    border:1px solid #242635;
+    border-radius:10px;
+    padding:8px;
+    resize:vertical;
+  }
 </style>
 </head>
 <body>
@@ -221,24 +248,19 @@
     <header>
       <h1>Integral Calculator</h1>
       <span class="pill">Enter = Solve</span>
-      <span class="muted">Shift+Enter: newline · <b>int</b> → ∫ · operators auto-space</span>
+      <span class="muted">Shift+Enter: newline · <b>int</b> → ∫ · <b>inf</b> → ∞</span>
     </header>
 
     <section class="card">
       <p class="muted">
-        Type an integral on its own line and press <b>Enter</b>.
-        The answer will appear <b>two lines below</b> that line.
-        Use <b>Shift+Enter</b> to insert a normal newline without solving.
+        Type an integral and press <b>Enter</b> to solve. Use <b>Shift+Enter</b> for a newline.
+        Right after typing <code>int</code>, press <b>↑</b> or <b>↓</b> to create upper / lower bounds on the integral sign.
       </p>
 
-      <textarea id="editor" spellcheck="false"
-        aria-label="Integral input area"
-        placeholder="Examples:
-int x^2 dx
-int int x*y dx dy
-int int int z dx dy dz
-int[0,∞] e^(-x) dx
-defint(1/(1+x^4), x, 0, Infinity)"></textarea>
+      <!-- MathQuill editor -->
+      <div id="mathFieldWrapper">
+        <span id="mathField"></span>
+      </div>
 
       <div class="row">
         <button id="clearBtn">Clear</button>
@@ -246,6 +268,8 @@ defint(1/(1+x^4), x, 0, Infinity)"></textarea>
         <button id="showStepsBtn">Show steps</button>
         <span id="status" class="muted"></span>
       </div>
+
+      <div id="answerOutput"></div>
 
       <div id="previewTitle">Live preview (formatted math):</div>
       <div id="preview"></div>
@@ -256,25 +280,28 @@ defint(1/(1+x^4), x, 0, Infinity)"></textarea>
         <div id="stepsContent"></div>
       </div>
 
-      <div class="help">
-        <b>How to write integrals:</b>
-        <ul>
-          <li><code>int x^2 dx</code> → <code>∫ x^2 dx</code> (single integral)</li>
-          <li><code>int int x*y dx dy</code> → <code>∫ ∫ x*y dx dy</code> (double integral)</li>
-          <li><code>int int int z dx dy dz</code> → triple integral</li>
-          <li><code>int[0,1] x^2 dx</code> → <code>∫[0,1] x^2 dx</code> (definite integral)</li>
-          <li><code>int[0,∞] e^(-x) dx</code> → improper integral (<code>∞</code>, <code>inf</code>, <code>Infinity</code> allowed)</li>
-        </ul>
-        <b>Notes:</b>
-        <ul>
-          <li>Right after typing <code>int</code>, hit <b>↑</b> or <b>↓</b> to create <code>∫_{ }^{ }</code> and jump to the top or bottom slot.</li>
-          <li>For double/triple integrals, the order of <code>d...</code> at the end matches the iterated integrals.</li>
-          <li>If a line isn’t recognized as an integral, you’ll get an error instead of a guess.</li>
-        </ul>
-      </div>
+      <div class="bottomRow">
+        <!-- Left: help -->
+        <div class="help">
+          <h3>How to write integrals:</h3>
+          <ul>
+            <li><code>int x^2 dx</code> → <code>∫ x^2 dx</code> (single integral)</li>
+            <li><code>int int x*y dx dy</code> → <code>∫ ∫ x*y dx dy</code> (double integral)</li>
+            <li><code>int int int z dx dy dz</code> → triple integral</li>
+            <li>Right after <code>int</code>, press <b>↑</b> or <b>↓</b> to create bounds: <code>∫<sub>bottom</sub><sup>top</sup></code></li>
+            <li>Type <code>inf</code> to get <code>∞</code> (works in bounds).</li>
+            <li>Definite / improper integrals:
+              <ul>
+                <li><code>∫<sub>0</sub><sup>1</sup> x^2 dx</code></li>
+                <li><code>∫<sub>0</sub><sup>∞</sup> e^(-x) dx</code></li>
+                <li>or bracket form: <code>∫[0,∞] e^(-x) dx</code></li>
+              </ul>
+            </li>
+            <li>Superscripts & subscripts: use <code>^</code> and <code>_</code> (e.g. <code>x^2</code>, <code>a_1</code>); they render properly.</li>
+          </ul>
+        </div>
 
-      <!-- Calculator bottom-right -->
-      <div class="calcWrapper">
+        <!-- Right: calculator, aligned with heading -->
         <div class="calcCard">
           <p class="calcTitle">Calculator</p>
           <div id="calcDisplay" class="calcDisplay" tabindex="0"
@@ -313,7 +340,6 @@ defint(1/(1+x^4), x, 0, Infinity)"></textarea>
         <button id="reportBtn">Report a Problem / Contact Us</button>
         <div id="reportPanel" style="display:none;margin-top:6px;">
           <textarea id="reportMsg"
-            style="width:100%;min-height:90px;background:#0f1017;color:var(--ink);border:1px solid #242635;border-radius:10px;padding:8px;resize:vertical"
             placeholder="What did you type? What happened? What did you expect?"></textarea>
           <div class="row" style="margin-top:6px">
             <button id="reportSubmit">Submit</button>
@@ -331,19 +357,27 @@ defint(1/(1+x^4), x, 0, Infinity)"></textarea>
   </div>
 
 <script>
-/* ===== Helpers ===== */
-const editor       = document.getElementById('editor');
+/* ===== MathQuill setup ===== */
+const MQ = MathQuill.getInterface(2);
+const mathFieldSpan = document.getElementById('mathField');
+const mathField = MQ.MathField(mathFieldSpan, {
+  spaceBehavesLikeTab: true,
+  autoOperatorNames: 'sin cos tan log ln',
+  handlers: {
+    edit: () => updatePreview()
+  }
+});
+
 const statusEl     = document.getElementById('status');
+const previewEl    = document.getElementById('preview');
 const stepsPanel   = document.getElementById('stepsPanel');
 const stepsContent = document.getElementById('stepsContent');
-const previewEl    = document.getElementById('preview');
+const answerOutput = document.getElementById('answerOutput');
 
 let lastAnswer    = '';
 let lastStepsHTML = '';
-
-// track a fresh integral just created by "int"
-let integralFresh = false;
-let integralStart = -1;
+let typedWord     = '';
+let integralFresh = false; // true right after converting 'int' → ∫
 
 function flashStatus(msg){
   statusEl.textContent = msg;
@@ -359,22 +393,17 @@ function escHtml(s){
   ));
 }
 
-/* ASCII → TeX-ish for MathJax (superscripts/subscripts) */
+/* ASCII-ish → TeX-ish for MathJax (used for steps, not for main MQ latex) */
 function exprToTex(s){
   let t = String(s);
-
-  // powers and subscripts
   t = t.replace(/\^(\d+)/g, '^{$1}');
   t = t.replace(/_(\d+)/g, '_{$1}');
-
-  // common functions/constants
   t = t.replace(/pi\b/g, '\\pi');
   t = t.replace(/sin\(/g, '\\sin(');
   t = t.replace(/cos\(/g, '\\cos(');
   t = t.replace(/tan\(/g, '\\tan(');
   t = t.replace(/log\(/g, '\\log(');
   t = t.replace(/ln\(/g, '\\ln(');
-
   return t;
 }
 
@@ -387,196 +416,155 @@ function updateSteps(html){
 }
 
 function updatePreview(){
-  const text = editor.value;
-  if (!text.trim()){
+  const latex = mathField.latex();
+  if (!latex.trim()){
     previewEl.innerHTML = '<span class="muted">Start typing above to see formatted math here.</span>';
     return;
   }
-  const lines = text.split('\n');
-  const texLines = lines.map(line => exprToTex(line));
-  const tex = texLines.join(' \\\\ ');
-  const html = '$$' + tex + '$$';
-  previewEl.textContent = html; // then MathJax will read it
+  const display = '$$' + latex + '$$';
+  previewEl.textContent = display;
   if (window.MathJax && window.MathJax.typesetPromise) {
     MathJax.typesetPromise([previewEl]).catch(()=>{});
   }
 }
 
-/* ===== Auto-transform: 'int' → '∫ ' (no trailing space needed from user) ===== */
-editor.addEventListener('input', function(){
-  let value = editor.value;
-  let pos   = editor.selectionStart;
+/* ===== Typed word detection for int → ∫ and inf → ∞ ===== */
+const editorWrapper = document.getElementById('mathFieldWrapper');
 
-  // Auto-convert 'int' to '∫ ' when the last 3 chars are 'int'
-  if (pos >= 3 && value.slice(pos-3, pos) === 'int') {
-    const start = pos - 3;
-    const beforeText = value.slice(0, start);
-    const afterText  = value.slice(pos);
-
-    const prevChar = start > 0 ? value[start-1] : ' ';
-    const needPrefixSpace = !/\s/.test(prevChar) && start > 0;
-    const replacement = (needPrefixSpace ? ' ' : '') + '∫ ';
-
-    const newVal = beforeText + replacement + afterText;
-    const newPos = beforeText.length + replacement.length;
-
-    editor.value = newVal;
-    editor.selectionStart = editor.selectionEnd = newPos;
-
-    // mark this integral as "fresh" so ↑/↓ can create limits template
-    integralFresh = true;
-    // index of the '∫'
-    integralStart = needPrefixSpace ? beforeText.length + 1 - 1 : beforeText.length;
-    value = newVal;
-    pos   = newPos;
-  }
-
-  updatePreview();
-});
-
-/* ===== Keyboard behavior ===== */
-editor.addEventListener('keydown', function(e){
-  // special integral-limit behavior: only if integral is "fresh"
-  if (integralFresh && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-    e.preventDefault();
-    const value = editor.value;
-    if (integralStart < 0) {
-      integralFresh = false;
+editorWrapper.addEventListener('keydown', (e)=>{
+  // letter tracking
+  if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
+    typedWord += e.key.toLowerCase();
+    setTimeout(()=>checkAutoWords(),0);
+  } else if (e.key === 'Backspace') {
+    typedWord = typedWord.slice(0,-1);
+  } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    // handle integral limits immediately
+    if (integralFresh) {
+      e.preventDefault();
+      handleIntegralArrow(e.key);
       return;
     }
-    // we expect substring '∫ ' starting at integralStart
-    const before = value.slice(0, integralStart);
-    const after  = value.slice(integralStart + '∫ '.length);
-    const replacement = '∫_{ }^{ } ';
-    const newVal = before + replacement + after;
-    editor.value = newVal;
-
-    // place caret in upper or lower slot
-    // '∫_{ }^{ } ' indices: 0:'∫',1:'_',2:'{',3:' ',4:'}',5:'^',6:'{',7:' ',8:'}',9:' '
-    const base = integralStart;
-    let caretOffset;
-    if (e.key === 'ArrowUp') {
-      // inside upper braces
-      caretOffset = 7; // after '{' of ^{ }
-    } else {
-      // inside lower braces
-      caretOffset = 3; // after '{' of _{ }
-    }
-    const newPos = base + caretOffset;
-    editor.selectionStart = editor.selectionEnd = newPos;
-
-    // after this, it's no longer "fresh"
-    integralFresh = false;
-    updatePreview();
-    return;
-  }
-
-  // any other key kills the "fresh" state
-  if (integralFresh && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') {
-    integralFresh = false;
-  }
-
-  // Auto-spacing for operators: + - * / =
-  const ops = ['+','-','*','/','='];
-  if (ops.includes(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+    typedWord = '';
+  } else if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
-    const value = editor.value;
-    const pos   = editor.selectionStart;
-    const before = value.slice(0, pos);
-    const after  = value.slice(pos);
-    const token  = ' ' + e.key + ' ';
-    editor.value = before + token + after;
-    const newPos = pos + token.length;
-    editor.selectionStart = editor.selectionEnd = newPos;
-    updatePreview();
-    return;
-  }
-
-  // Enter behavior (solve line)
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-
-    const value = editor.value;
-    const pos   = editor.selectionStart;
-
-    const lineStart = value.lastIndexOf('\n', pos-1) + 1;
-    let lineEnd     = value.indexOf('\n', pos);
-    if (lineEnd === -1) lineEnd = value.length;
-
-    const line = value.slice(lineStart, lineEnd);
-
-    if (!line.trim()) {
-      const before = value.slice(0, pos);
-      const after  = value.slice(pos);
-      editor.value = before + '\n' + after;
-      const newPos = pos + 1;
-      editor.selectionStart = editor.selectionEnd = newPos;
-      updatePreview();
-      return;
-    }
-
-    const { answer, stepsHTML } = solveIntegralFromLine(line);
-    lastAnswer = answer;
-    updateSteps(stepsHTML);
-
-    const beforeLineEnd = value.slice(0, lineEnd);
-    const afterLineEnd  = value.slice(lineEnd);
-    const insertion     = '\n\n= ' + answer;
-
-    editor.value = beforeLineEnd + insertion + afterLineEnd;
-    const newCaretPos = (beforeLineEnd + insertion).length;
-    editor.selectionStart = editor.selectionEnd = newCaretPos;
-
-    updatePreview();
-    flashStatus('Solved integral.');
+    solveCurrentExpression();
+    typedWord = '';
+  } else {
+    typedWord = '';
   }
 });
 
-/* ===== Integral solving logic (single, double, triple, definite & improper) ===== */
+function checkAutoWords(){
+  // convert 'int' → integral
+  if (typedWord.endsWith('int')) {
+    for (let i=0;i<3;i++) mathField.keystroke('Backspace');
+    mathField.cmd('\\int');
+    mathField.write(' ');
+    integralFresh = true; // enable arrow-based bounds
+    return;
+  }
+  // convert 'inf' → ∞
+  if (typedWord.endsWith('inf')) {
+    for (let i=0;i<3;i++) mathField.keystroke('Backspace');
+    mathField.cmd('\\infty');
+    typedWord = '';
+    return;
+  }
+}
 
-function normalizeBound(v){
-  const s = v.trim();
-  if (/^(∞|\+?inf|\+?infinity)$/i.test(s)) return 'Infinity';
-  if (/^(-∞|-inf|-infinity)$/i.test(s))   return '-Infinity';
+/* ===== Integral bounds behavior right after ∫ ===== */
+function handleIntegralArrow(direction){
+  // We're sitting just after "∫ " (caret to the right).
+  // Move left into the integral symbol, then create both sub and sup
+  // and leave caret in top (ArrowUp) or bottom (ArrowDown).
+
+  // move into integral
+  mathField.keystroke('Left');
+
+  if (direction === 'ArrowUp') {
+    // create lower then upper, end in upper
+    mathField.keystroke('_');      // create subscript, caret in it
+    mathField.keystroke('Right');  // leave subscript, caret back at integral
+    mathField.keystroke('^');      // create superscript, caret in it (top box)
+  } else {
+    // create upper then lower, end in lower
+    mathField.keystroke('^');      // create superscript, caret in it
+    mathField.keystroke('Right');  // back to integral
+    mathField.keystroke('_');      // create subscript, caret in it (bottom box)
+  }
+
+  // after we've created the structure once, don't re-trigger
+  integralFresh = false;
+}
+
+/* ===== Latex → Nerdamer-friendly text ===== */
+function latexToPlain(latex){
+  let s = latex;
+  // strip spacing and style commands
+  s = s.replace(/\\left/g, '');
+  s = s.replace(/\\right/g, '');
+  s = s.replace(/\\,/g, '');
+  s = s.replace(/\\!/g, '');
+  s = s.replace(/\\ /g, ' ');
+  s = s.replace(/\\cdot/g, '*');
+  s = s.replace(/\\times/g, '*');
+  s = s.replace(/\\pi/g, 'pi');
+  s = s.replace(/\\infty/g, 'Infinity');
+  s = s.replace(/\\sin/g, 'sin');
+  s = s.replace(/\\cos/g, 'cos');
+  s = s.replace(/\\tan/g, 'tan');
+  s = s.replace(/\\log/g, 'log');
+  s = s.replace(/\\ln/g, 'ln');
+  // frac
+  s = s.replace(/\\frac{([^}]*)}{([^}]*)}/g, '(($1)/($2))');
   return s;
 }
 
-function solveIntegralFromLine(rawLine){
-  const line = rawLine.trim();
-  const result = { answer: '', stepsHTML: '' };
+function normalizeBound(v){
+  const s = v.trim();
+  if (/^(∞|\+?inf|\+?Infinity)$/i.test(s)) return 'Infinity';
+  if (/^(-∞|-inf|-Infinity)$/i.test(s))   return '-Infinity';
+  return s;
+}
 
-  if (!line) return result;
+/* ===== Solve integral from MathQuill latex ===== */
+function solveIntegralFromLatex(latex){
+  const plain = latexToPlain(latex);
+  const result = { answer:'', stepsHTML:'' };
+
+  const trim = (x)=>x.trim();
 
   try {
-    /* 1. Direct Nerdamer commands still work: integrate(...), defint(...) */
-    if (/(^|[^a-zA-Z])integrate\s*\(/.test(line) ||
-        /(^|[^a-zA-Z])defint\s*\(/.test(line)) {
-      const res = nerdamer(line).simplify();
+    // 1. Direct nerdamer calls
+    if (/integrate\s*\(/.test(plain) || /defint\s*\(/.test(plain)) {
+      const res = nerdamer(plain).simplify();
       result.answer = res.toString();
       const texRes = exprToTex(result.answer);
       result.stepsHTML = `
         <p><b>Input:</b></p>
-        <p><code>${escHtml(line)}</code></p>
+        <p><code>${escHtml(plain)}</code></p>
         <p><b>Result (simplified):</b></p>
         <p>$$${texRes}$$</p>`;
       return result;
     }
 
-    /* 2. TeX-style limits: ∫_{a}^{b} f(x) dx */
-    let mTex = line.match(/^∫\s*_\{([^}]*)\}\s*\^\{([^}]*)\}\s*(.+)\s+d([a-zA-Z])$/);
+    let s = plain.replace(/\s+/g,' ').trim();
+
+    // 2. TeX-style definite (possibly improper): \int_{a}^{b} f(x) dx
+    let mTex = s.match(/^\\int\s*_{([^}]*)}\s*\^{([^}]*)}\s*(.+)d([a-zA-Z])\s*$/);
     if (mTex) {
-      const aRaw = mTex[1].trim();
-      const bRaw = mTex[2].trim();
-      const f    = mTex[3].trim();
-      const v    = mTex[4].trim();
-
+      const aRaw = trim(mTex[1]);
+      const bRaw = trim(mTex[2]);
+      const expr = trim(mTex[3]);
+      const v    = trim(mTex[4]);
       const a = normalizeBound(aRaw);
       const b = normalizeBound(bRaw);
 
-      const F   = nerdamer.integrate(f, v).simplify();
-      const val = nerdamer.defint(f, v, a, b).simplify();
+      const F   = nerdamer.integrate(expr, v).simplify();
+      const val = nerdamer.defint(expr, v, a, b).simplify();
 
-      const texIntegral = `\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(f)}\\, d${v}`;
+      const texIntegral = `\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(expr)}\\, d${v}`;
       const texF   = exprToTex(F.toString());
       const texVal = exprToTex(val.toString());
 
@@ -584,32 +572,30 @@ function solveIntegralFromLine(rawLine){
       result.stepsHTML = `
         <p><b>Given definite integral:</b></p>
         <p>$$${texIntegral}$$</p>
-        <p><b>1. Find an antiderivative:</b></p>
+        <p><b>1. Antiderivative:</b></p>
         <p>$$F(${v}) = ${texF}$$</p>
-        <p><b>2. Evaluate at the bounds:</b></p>
-        <p>$$\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(f)}\\, d${v}
-            = F(${exprToTex(b)}) - F(${exprToTex(a)})$$</p>
+        <p><b>2. Evaluate at bounds:</b></p>
+        <p>$$\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(expr)}\\, d${v}
+          = F(${exprToTex(b)}) - F(${exprToTex(a)})$$</p>
         <p><b>3. Final result:</b></p>
-        <p>$$${texVal}$$</p>
-      `;
+        <p>$$${texVal}$$</p>`;
       return result;
     }
 
-    /* 3. Bracket-style definite (possibly improper): ∫[a,b] f(x) dx */
-    const mBracket = line.match(/^∫\s*\[\s*([^,]+)\s*,\s*([^\]]+)\s*\]\s*(.+)\s+d([a-zA-Z])$/);
-    if (mBracket) {
-      const aRaw = mBracket[1].trim();
-      const bRaw = mBracket[2].trim();
-      const f    = mBracket[3].trim();
-      const v    = mBracket[4].trim();
-
+    // 3. Bracket-style definite: \int[a,b] f(x) dx  (also possibly improper)
+    let mBr = s.match(/^\\int\[\s*([^,]+)\s*,\s*([^\]]+)\]\s*(.+)d([a-zA-Z])\s*$/);
+    if (mBr) {
+      const aRaw = trim(mBr[1]);
+      const bRaw = trim(mBr[2]);
+      const expr = trim(mBr[3]);
+      const v    = trim(mBr[4]);
       const a = normalizeBound(aRaw);
       const b = normalizeBound(bRaw);
 
-      const F   = nerdamer.integrate(f, v).simplify();
-      const val = nerdamer.defint(f, v, a, b).simplify();
+      const F   = nerdamer.integrate(expr, v).simplify();
+      const val = nerdamer.defint(expr, v, a, b).simplify();
 
-      const texIntegral = `\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(f)}\\, d${v}`;
+      const texIntegral = `\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(expr)}\\, d${v}`;
       const texF   = exprToTex(F.toString());
       const texVal = exprToTex(val.toString());
 
@@ -617,57 +603,57 @@ function solveIntegralFromLine(rawLine){
       result.stepsHTML = `
         <p><b>Given definite integral:</b></p>
         <p>$$${texIntegral}$$</p>
-        <p><b>1. Find an antiderivative:</b></p>
+        <p><b>1. Antiderivative:</b></p>
         <p>$$F(${v}) = ${texF}$$</p>
-        <p><b>2. Evaluate at the bounds:</b></p>
-        <p>$$\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(f)}\\, d${v}
-            = F(${exprToTex(b)}) - F(${exprToTex(a)})$$</p>
+        <p><b>2. Evaluate at bounds:</b></p>
+        <p>$$\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(expr)}\\, d${v}
+          = F(${exprToTex(b)}) - F(${exprToTex(a)})$$</p>
         <p><b>3. Final result:</b></p>
-        <p>$$${texVal}$$</p>
-      `;
+        <p>$$${texVal}$$</p>`;
       return result;
     }
 
-    /* 4. Iterated integrals: ∫ ∫ ∫ f(...) dx dy dz ... */
-    let s = line;
-    let i = 0;
-    let count = 0;
-    while (i < s.length) {
-      const ch = s[i];
-      if (ch === '∫') {
-        count++;
-        i++;
-      } else if (ch === ' ' || ch === '\t') {
-        i++;
-      } else {
-        break;
-      }
+    // 4. Count \int occurrences for iterated vs single
+    const intMatches = s.match(/\\int/g) || [];
+    const intCount   = intMatches.length;
+
+    // 4a. Single indefinite integral: \int f(x) dx
+    const mIndef = s.match(/^\\int\s+(.+)\s+d([a-zA-Z])\s*$/);
+    if (mIndef && intCount === 1) {
+      const expr = trim(mIndef[1]);
+      const v    = trim(mIndef[2]);
+      const F    = nerdamer.integrate(expr, v).simplify();
+      result.answer = F.toString();
+      const texInt  = `\\int ${exprToTex(expr)}\\, d${v}`;
+      const texF    = exprToTex(result.answer);
+      result.stepsHTML = `
+        <p><b>Indefinite integral:</b></p>
+        <p>$$${texInt}$$</p>
+        <p><b>Antiderivative:</b></p>
+        <p>$$${texF} + C$$</p>`;
+      return result;
     }
 
-    if (count > 0) {
-      let expr = s.slice(i).trim();
-      let vars = [];
+    // 4b. Iterated indefinite integrals: \int \int ... dx dy ...
+    if (intCount > 1) {
+      let rest = s.replace(/^(?:\\int\s*)+/, '');
+      let expr = trim(rest);
+      const vars = [];
 
-      // peel off trailing d<var>
       while (true) {
         const m = expr.match(/^(.*)\bd([a-zA-Z])\s*$/);
         if (!m) break;
-        vars.push(m[2]);
-        expr = m[1].trim();
+        vars.push(trim(m[2]));
+        expr = trim(m[1]);
       }
 
-      if (vars.length === 0) {
-        throw new Error('Could not find variable(s) like dx, dy, dz at the end.');
-      }
-      if (vars.length !== count) {
-        throw new Error(`Found ${count} integral sign(s) but ${vars.length} variable(s).`);
-      }
+      if (!vars.length) throw new Error('Could not find dx, dy, dz, ... at end.');
+      if (vars.length !== intCount) throw new Error(`Found ${intCount} integrals but ${vars.length} variables.`);
 
       let resExpr = expr;
       const intermediate = [];
 
-      // integrate from inner to outer
-      for (let k = vars.length - 1; k >= 0; k--) {
+      for (let k=vars.length-1;k>=0;k--){
         const v = vars[k];
         resExpr = nerdamer.integrate(resExpr, v).toString();
         intermediate.push({ v, expr: resExpr });
@@ -678,7 +664,7 @@ function solveIntegralFromLine(rawLine){
 
       const typedOrder = vars.slice().reverse();
       const texOriginal =
-        `${'\\int '.repeat(count)} ${exprToTex(expr)}\\, ${typedOrder.map(v => 'd'+v).join('\\, ')}`;
+        `${'\\int '.repeat(intCount)} ${exprToTex(expr)}\\, ${typedOrder.map(v => 'd'+v).join('\\, ')}`;
       const texSteps = intermediate.map((step, idx) => {
         const v = step.v;
         const texF = exprToTex(step.expr);
@@ -692,14 +678,12 @@ function solveIntegralFromLine(rawLine){
         <p>$$${texOriginal}$$</p>
         ${texSteps}
         <p><b>Final result:</b></p>
-        <p>$$${texFinal}$$</p>
-      `;
+        <p>$$${texFinal}$$</p>`;
       return result;
     }
 
-    /* 5. Not recognized */
-    throw new Error('Line not recognized as an integral. Start with "int" (→ ∫) or use defint(...).');
-
+    // 5. Fallback: not recognized
+    throw new Error('Expression not recognized as an integral. Use "int" (→ ∫) with dx, dy, etc.');
   } catch (err) {
     const msg = 'Error: ' + (err && err.message ? err.message : String(err));
     result.answer = msg;
@@ -708,14 +692,32 @@ function solveIntegralFromLine(rawLine){
   }
 }
 
-/* Clear + copy last answer */
+/* ===== Solve current expression (Enter) ===== */
+function solveCurrentExpression(){
+  const latex = mathField.latex().trim();
+  if (!latex) return;
+  const {answer, stepsHTML} = solveIntegralFromLatex(latex);
+  lastAnswer = answer;
+  updateSteps(stepsHTML);
+
+  if (answer && !answer.startsWith('Error:')) {
+    answerOutput.textContent = '= ' + answer;
+  } else {
+    answerOutput.textContent = answer;
+  }
+
+  flashStatus('Solved integral.');
+}
+
+/* ===== Clear + copy last answer ===== */
 document.getElementById('clearBtn').addEventListener('click', ()=>{
-  editor.value = '';
+  mathField.latex('');
   lastAnswer = '';
+  answerOutput.textContent = '';
   updateSteps('');
   updatePreview();
   flashStatus('Cleared.');
-  editor.focus();
+  mathField.focus();
 });
 
 document.getElementById('copyLastBtn').addEventListener('click', async ()=>{
@@ -731,7 +733,7 @@ document.getElementById('copyLastBtn').addEventListener('click', async ()=>{
   }
 });
 
-/* Show steps dropdown toggle */
+/* ===== Show steps dropdown toggle ===== */
 document.getElementById('showStepsBtn').addEventListener('click', ()=>{
   if (stepsPanel.style.display === 'block') {
     stepsPanel.style.display = 'none';
@@ -744,7 +746,7 @@ document.getElementById('showStepsBtn').addEventListener('click', ()=>{
   }
 });
 
-/* ===== Calculator (same behavior as before) ===== */
+/* ===== Calculator (same behavior) ===== */
 const calcDisplay = document.getElementById('calcDisplay');
 let calcBuffer    = '0';
 let calcFocused   = false;
@@ -752,18 +754,14 @@ let calcFocused   = false;
 function setDisp(s){ calcDisplay.textContent = s; }
 function calcAppendKey(k){
   if (k === 'C'){
-    calcBuffer = '0';
-    setDisp(calcBuffer);
-    return;
+    calcBuffer = '0'; setDisp(calcBuffer); return;
   }
   if (k === 'Backspace'){
     calcBuffer = calcBuffer.length > 1 ? calcBuffer.slice(0,-1) : '0';
-    setDisp(calcBuffer);
-    return;
+    setDisp(calcBuffer); return;
   }
   if (k === '=' || k === 'Enter'){
-    calcTryEval();
-    return;
+    calcTryEval(); return;
   }
   const allowed = /[0-9.+\-*/]/;
   if (!allowed.test(k)) return;
@@ -857,6 +855,42 @@ window.addEventListener('keydown', (e)=>{
     e.preventDefault();
     calcAppendKey(k === 'c' ? 'C' : k);
   }
+});
+
+/* ===== Report Problem (mailto) ===== */
+const reportBtn     = document.getElementById('reportBtn');
+const reportPanel   = document.getElementById('reportPanel');
+const reportMsg     = document.getElementById('reportMsg');
+const reportSubmit  = document.getElementById('reportSubmit');
+const reportCancel  = document.getElementById('reportCancel');
+const reportStatus  = document.getElementById('reportStatus');
+
+reportBtn.addEventListener('click', ()=>{
+  const show = reportPanel.style.display !== 'block';
+  reportPanel.style.display = show ? 'block' : 'none';
+  if (show) reportMsg.focus();
+});
+
+reportCancel.addEventListener('click', ()=>{
+  reportPanel.style.display='none';
+  reportStatus.textContent='';
+});
+
+reportSubmit.addEventListener('click', ()=>{
+  const msg = (reportMsg.value || '').trim();
+  if (!msg){
+    reportStatus.textContent='Please write a short description.';
+    return;
+  }
+  const subject = encodeURIComponent('Integral Calculator — Problem Report');
+  const context = '\n\n---\nCurrent math (LaTeX):\n' +
+                  (mathField.latex() || '').slice(0, 4000);
+  const body    = encodeURIComponent(msg + context);
+  const mailto  = `mailto:oliver.c1639@gmail.com?subject=${subject}&body=${body}`;
+
+  reportPanel.style.display = 'none';
+  reportStatus.textContent  = 'Thanks! Your mail app should open — just hit send.';
+  window.location.href = mailto;
 });
 
 /* Initial preview */
