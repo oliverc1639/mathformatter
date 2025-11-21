@@ -21,7 +21,7 @@
 <!-- Nerdamer (symbolic math, integrals) -->
 <script src="https://cdn.jsdelivr.net/npm/nerdamer@1.1.13/all.min.js"></script>
 
-<!-- MathJax for pretty superscripts/subscripts in steps -->
+<!-- MathJax for pretty superscripts/subscripts & integrals -->
 <script>
   window.MathJax = {
     tex: {inlineMath: [['$', '$'], ['\\(', '\\)']]},
@@ -40,14 +40,14 @@
     margin:0;
     background:var(--bg);
     color:var(--ink);
-    font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
+    font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
   }
   a{color:var(--accent);text-decoration:none}
   a:hover{text-decoration:underline}
 
   .wrap{max-width:980px;margin:40px auto;padding:0 16px}
-  header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-  header h1{font-size:20px;margin:0}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+  header h1{font-size:22px;margin:0}
   .pill{
     font-size:12px;
     color:var(--panel);
@@ -63,20 +63,28 @@
     padding:14px;
     border:1px solid var(--edge);
     box-shadow:0 1px 0 rgba(255,255,255,.03) inset;
+    position:relative;
   }
 
   #editor{
     width:100%;
-    min-height:260px;
+    min-height:220px;
     background:#0f1017;
     border:1px solid #242635;
     border-radius:12px;
     padding:12px;
     outline:none;
     color:var(--ink);
-    font:15px/1.4 ui-monospace,Menlo,Consolas,monospace;
+    font:16px/1.6 ui-monospace,Menlo,Consolas,monospace;
     resize:vertical;
     white-space:pre-wrap;
+  }
+  #editor:focus{
+    border-color:#26c6da;
+    box-shadow:0 0 0 1px rgba(38,198,218,0.4);
+  }
+  #editor::placeholder{
+    color:#555b6b;
   }
 
   .row{
@@ -110,8 +118,24 @@
     padding:0 4px;
     font-size:12px;
   }
-
   ul{margin-top:6px;margin-bottom:0;padding-left:20px;}
+
+  /* Live preview of input (pretty math) */
+  #preview{
+    margin-top:10px;
+    padding:10px;
+    border-radius:10px;
+    border:1px solid #242635;
+    background:#0d1119;
+    min-height:40px;
+    font-size:15px;
+  }
+  #previewTitle{
+    font-size:12px;
+    color:var(--muted);
+    margin-top:8px;
+    margin-bottom:2px;
+  }
 
   /* Steps panel (read-only dropdown box) */
   #stepsPanel{
@@ -127,6 +151,69 @@
     color:var(--muted);
     margin-bottom:6px;
   }
+
+  /* Calculator */
+  .calcWrapper{
+    margin-top:14px;
+    display:flex;
+    justify-content:flex-end;
+  }
+  .calcCard{
+    background:#0f1017;
+    border:1px solid #242635;
+    border-radius:14px;
+    padding:10px;
+    width:220px;
+  }
+  .calcTitle{
+    font-size:13px;
+    color:#9aa3b2;
+    margin:0 0 6px 0;
+  }
+  .calcDisplay{
+    width:100%;
+    height:36px;
+    border:1px solid #242635;
+    border-radius:10px;
+    background:#0b0c12;
+    color:#e7e9ee;
+    font:18px/36px ui-monospace,Menlo,Consolas,monospace;
+    padding:0 10px;
+    text-align:right;
+    overflow:hidden;
+    white-space:nowrap;
+  }
+  .calcDisplay:focus{
+    outline:2px solid #26c6da;
+    outline-offset:2px;
+  }
+  .calcGrid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:6px;
+    margin-top:6px;
+  }
+  .key{
+    height:32px;
+    border:1px solid #2a2d3e;
+    background:#161823;
+    border-radius:10px;
+    color:#e7e9ee;
+    font:13px/32px system-ui;
+    cursor:pointer;
+    text-align:center;
+    user-select:none;
+  }
+  .key.op{background:#1a1d2a}
+  .key.eq{background:#1e2a37;border-color:#345}
+  .key.wide{grid-column:span 2}
+  .key:active{transform:translateY(1px)}
+  .calcHelp{
+    color:#9aa3b2;
+    font-size:11px;
+    margin:6px 0 0 0;
+    text-align:right;
+  }
 </style>
 </head>
 <body>
@@ -134,7 +221,7 @@
     <header>
       <h1>Integral Calculator</h1>
       <span class="pill">Enter = Solve</span>
-      <span class="muted">Shift+Enter for newline · <b>int␣</b> → ∫</span>
+      <span class="muted">Shift+Enter: newline · <b>int</b> → ∫ · operators auto-space</span>
     </header>
 
     <section class="card">
@@ -150,9 +237,8 @@
 int x^2 dx
 int int x*y dx dy
 int int int z dx dy dz
-int[0,1] x^2 dx
-integrate(sin(x)^2, x)
-defint(exp(x), x, 0, 1)"></textarea>
+int[0,∞] e^(-x) dx
+defint(1/(1+x^4), x, 0, Infinity)"></textarea>
 
       <div class="row">
         <button id="clearBtn">Clear</button>
@@ -160,6 +246,9 @@ defint(exp(x), x, 0, 1)"></textarea>
         <button id="showStepsBtn">Show steps</button>
         <span id="status" class="muted"></span>
       </div>
+
+      <div id="previewTitle">Live preview (formatted math):</div>
+      <div id="preview"></div>
 
       <!-- Read-only steps dropdown -->
       <div id="stepsPanel" aria-live="polite">
@@ -170,22 +259,53 @@ defint(exp(x), x, 0, 1)"></textarea>
       <div class="help">
         <b>How to write integrals:</b>
         <ul>
-          <li><code>int x^2 dx</code> → auto becomes <code>∫ x^2 dx</code> (single integral)</li>
+          <li><code>int x^2 dx</code> → <code>∫ x^2 dx</code> (single integral)</li>
           <li><code>int int x*y dx dy</code> → <code>∫ ∫ x*y dx dy</code> (double integral)</li>
           <li><code>int int int z dx dy dz</code> → triple integral</li>
           <li><code>int[0,1] x^2 dx</code> → <code>∫[0,1] x^2 dx</code> (definite integral)</li>
-          <li>You can also use Nerdamer directly:
-            <ul>
-              <li><code>integrate(sin(x)^2, x)</code></li>
-              <li><code>defint(x^2+y^2, x, 0, 1)</code></li>
-            </ul>
-          </li>
+          <li><code>int[0,∞] e^(-x) dx</code> → improper integral (∞, inf, Infinity all allowed)</li>
+          <li>You can also use commands like <code>integrate(f, x)</code> or <code>defint(f, x, a, b)</code> directly.</li>
         </ul>
         <b>Notes:</b>
         <ul>
           <li>For double/triple integrals, the order of <code>d...</code> at the end matches the iterated integrals.</li>
           <li>If a line isn’t recognized as an integral, you’ll get an error instead of a guess.</li>
         </ul>
+      </div>
+
+      <!-- Calculator bottom-right -->
+      <div class="calcWrapper">
+        <div class="calcCard">
+          <p class="calcTitle">Calculator</p>
+          <div id="calcDisplay" class="calcDisplay" tabindex="0"
+               aria-label="Calculator display" title="Click to type with keyboard">0</div>
+          <div class="calcGrid">
+            <div class="key op" data-key="C">C</div>
+            <div class="key op" data-key="Backspace">⌫</div>
+            <div class="key op" data-key="/">÷</div>
+            <div class="key op" data-key="*">×</div>
+
+            <div class="key" data-key="7">7</div>
+            <div class="key" data-key="8">8</div>
+            <div class="key" data-key="9">9</div>
+            <div class="key op" data-key="-">−</div>
+
+            <div class="key" data-key="4">4</div>
+            <div class="key" data-key="5">5</div>
+            <div class="key" data-key="6">6</div>
+            <div class="key op" data-key="+">+</div>
+
+            <div class="key" data-key="1">1</div>
+            <div class="key" data-key="2">2</div>
+            <div class="key" data-key="3">3</div>
+            <div class="key eq" data-key="=">=</div>
+
+            <div class="key wide" data-key="0">0</div>
+            <div class="key" data-key=".">.</div>
+            <div class="key eq" data-key="Enter">=</div>
+          </div>
+          <div class="calcHelp">Keyboard: 0–9 . + − * / Enter, C, ⌫</div>
+        </div>
       </div>
 
       <!-- Report Problem / Contact -->
@@ -212,12 +332,13 @@ defint(exp(x), x, 0, 1)"></textarea>
 
 <script>
 /* ===== Helpers ===== */
-const editor     = document.getElementById('editor');
-const statusEl   = document.getElementById('status');
-const stepsPanel = document.getElementById('stepsPanel');
+const editor       = document.getElementById('editor');
+const statusEl     = document.getElementById('status');
+const stepsPanel   = document.getElementById('stepsPanel');
 const stepsContent = document.getElementById('stepsContent');
+const previewEl    = document.getElementById('preview');
 
-let lastAnswer = '';
+let lastAnswer    = '';
 let lastStepsHTML = '';
 
 function flashStatus(msg){
@@ -234,47 +355,101 @@ function escHtml(s){
   ));
 }
 
-/* Cheap ASCII → TeX-ish for display in MathJax */
+/* ASCII → TeX-ish for MathJax (superscripts/subscripts included) */
 function exprToTex(s){
   let t = String(s);
+
+  // group powers and subscripts
+  t = t.replace(/\^(\d+)/g, '^{$1}');
+  t = t.replace(/_(\d+)/g, '_{$1}');
+
+  // common functions/constants
   t = t.replace(/pi\b/g, '\\pi');
   t = t.replace(/sin\(/g, '\\sin(');
   t = t.replace(/cos\(/g, '\\cos(');
   t = t.replace(/tan\(/g, '\\tan(');
   t = t.replace(/log\(/g, '\\log(');
   t = t.replace(/ln\(/g, '\\ln(');
+
   return t;
 }
 
 function updateSteps(html){
   lastStepsHTML = html || '<p class="muted">No steps available for this input.</p>';
   stepsContent.innerHTML = lastStepsHTML;
-  // Keep it hidden until user clicks "Show steps"
-  // but if it is already open, re-typeset.
-  if (stepsPanel.style.display === 'block') {
-    if (window.MathJax && window.MathJax.typesetPromise) {
-      MathJax.typesetPromise([stepsContent]).catch(()=>{});
-    }
+  if (stepsPanel.style.display === 'block' && window.MathJax && window.MathJax.typesetPromise) {
+    MathJax.typesetPromise([stepsContent]).catch(()=>{});
   }
 }
 
-/* ===== Auto-transform: 'int ' → '∫ ' ===== */
-editor.addEventListener('input', function(){
-  const value = editor.value;
-  const pos   = editor.selectionStart;
+function updatePreview(){
+  const text = editor.value;
+  if (!text.trim()){
+    previewEl.innerHTML = '<span class="muted">Start typing above to see formatted math here.</span>';
+    return;
+  }
+  const lines = text.split('\n');
+  const texLines = lines.map(line => exprToTex(line));
+  const tex = texLines.join(' \\\\ ');
+  const html = '$$' + tex + '$$';
+  previewEl.innerHTML = escHtml(html);
+  if (window.MathJax && window.MathJax.typesetPromise) {
+    MathJax.typesetPromise([previewEl]).catch(()=>{});
+  }
+}
 
-  if (pos >= 4 && value.slice(pos-4, pos) === 'int ') {
-    const before = value.slice(0, pos-4);
-    const after  = value.slice(pos);
-    const newVal = before + '∫ ' + after;
-    const newPos = before.length + 2;  // '∫ ' is 2 chars
+/* ===== Auto-transform: 'int' → '∫ ' (no space needed after) ===== */
+editor.addEventListener('input', function(){
+  let value = editor.value;
+  let pos   = editor.selectionStart;
+
+  // Auto-convert 'int' to '∫ ' when the last 3 chars are 'int'
+  if (pos >= 3 && value.slice(pos-3, pos) === 'int') {
+    const start = pos - 3;
+    const beforeText = value.slice(0, start);
+    const afterText  = value.slice(pos);
+
+    const prevChar = start > 0 ? value[start-1] : ' ';
+    const needPrefixSpace = !/\s/.test(prevChar) && start > 0;
+    const replacement = (needPrefixSpace ? ' ' : '') + '∫ ';
+
+    const newVal = beforeText + replacement + afterText;
+    const newPos = beforeText.length + replacement.length;
 
     editor.value = newVal;
     editor.selectionStart = editor.selectionEnd = newPos;
+    value = newVal;
+    pos   = newPos;
+  }
+
+  updatePreview();
+});
+
+/* ===== Auto-spacing for operators: + - * / = ===== */
+editor.addEventListener('keydown', function(e){
+  const ops = ['+','-','*','/','='];
+  if (ops.includes(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    const value = editor.value;
+    const pos   = editor.selectionStart;
+    const before = value.slice(0, pos);
+    const after  = value.slice(pos);
+    const token  = ' ' + e.key + ' ';
+    editor.value = before + token + after;
+    const newPos = pos + token.length;
+    editor.selectionStart = editor.selectionEnd = newPos;
+    updatePreview();
   }
 });
 
-/* ===== Integral solving logic (single, double, triple, direct Nerdamer) ===== */
+/* ===== Integral solving logic (single, double, triple, definite & improper) ===== */
+
+function normalizeBound(v){
+  const s = v.trim();
+  if (/^(∞|\+?inf|\+?infinity)$/i.test(s)) return 'Infinity';
+  if (/^(-∞|-inf|-infinity)$/i.test(s))   return '-Infinity';
+  return s;
+}
 
 function solveIntegralFromLine(rawLine){
   const line = rawLine.trim();
@@ -283,33 +458,36 @@ function solveIntegralFromLine(rawLine){
   if (!line) return result;
 
   try {
-    /* 1. Direct Nerdamer calls (advanced usage) */
+    /* 1. Direct Nerdamer commands */
     if (/(^|[^a-zA-Z])integrate\s*\(/.test(line) ||
         /(^|[^a-zA-Z])defint\s*\(/.test(line)) {
       const res = nerdamer(line).simplify();
       result.answer = res.toString();
       const texRes = exprToTex(result.answer);
       result.stepsHTML = `
-        <p><b>Input (Nerdamer):</b></p>
+        <p><b>Input:</b></p>
         <p><code>${escHtml(line)}</code></p>
         <p><b>Result (simplified):</b></p>
         <p>$$${texRes}$$</p>`;
       return result;
     }
 
-    /* 2. Definite integral with bracket syntax: ∫[a,b] f(x) dx */
+    /* 2. Definite (possibly improper) integral: ∫[a,b] f(x) dx */
     const mBracket = line.match(/^∫\s*\[\s*([^,]+)\s*,\s*([^\]]+)\s*\]\s*(.+)\s+d([a-zA-Z])$/);
     if (mBracket) {
-      const a = mBracket[1].trim();
-      const b = mBracket[2].trim();
-      const f = mBracket[3].trim();
-      const v = mBracket[4].trim();
+      const aRaw = mBracket[1].trim();
+      const bRaw = mBracket[2].trim();
+      const f    = mBracket[3].trim();
+      const v    = mBracket[4].trim();
 
-      const F = nerdamer.integrate(f, v).simplify();   // antiderivative
+      const a = normalizeBound(aRaw);
+      const b = normalizeBound(bRaw);
+
+      const F   = nerdamer.integrate(f, v).simplify();
       const val = nerdamer.defint(f, v, a, b).simplify();
 
       const texIntegral = `\\int_{${exprToTex(a)}}^{${exprToTex(b)}} ${exprToTex(f)}\\, d${v}`;
-      const texF = exprToTex(F.toString());
+      const texF   = exprToTex(F.toString());
       const texVal = exprToTex(val.toString());
 
       result.answer = val.toString();
@@ -327,7 +505,7 @@ function solveIntegralFromLine(rawLine){
       return result;
     }
 
-    /* 3. Iterated integrals (single / double / triple / etc.) using ∫ ... dx dy dz */
+    /* 3. Iterated integrals ∫ ∫ ∫ f(...) dx dy dz ... */
     let s = line;
     let i = 0;
     let count = 0;
@@ -344,15 +522,15 @@ function solveIntegralFromLine(rawLine){
     }
 
     if (count > 0) {
-      let expr = s.slice(i).trim(); // stuff after the ∫ symbols
+      let expr = s.slice(i).trim();
       let vars = [];
 
-      // Peel off trailing "d<var>" blocks from right to left
+      // peel off trailing d<var>
       while (true) {
         const m = expr.match(/^(.*)\bd([a-zA-Z])\s*$/);
         if (!m) break;
-        vars.push(m[2]);          // variable name (e.g. x, y, z)
-        expr = m[1].trim();       // remaining expression
+        vars.push(m[2]);
+        expr = m[1].trim();
       }
 
       if (vars.length === 0) {
@@ -362,30 +540,28 @@ function solveIntegralFromLine(rawLine){
         throw new Error(`Found ${count} integral sign(s) but ${vars.length} variable(s).`);
       }
 
-      // Integrate from inner to outer
       let resExpr = expr;
       const intermediate = [];
-      const integrOrder = [];
 
+      // integrate from inner to outer
       for (let k = vars.length - 1; k >= 0; k--) {
         const v = vars[k];
         resExpr = nerdamer.integrate(resExpr, v).toString();
         intermediate.push({ v, expr: resExpr });
-        integrOrder.push(v);
       }
 
       const finalExpr = nerdamer(resExpr).simplify();
       result.answer = finalExpr.toString();
 
-      const typedOrder = vars.slice().reverse();  // order as in "dx dy ..."
-      const texOriginal = `${'\\int '.repeat(count)} ${exprToTex(expr)}\\, ${typedOrder.map(v => 'd'+v).join('\\, ')}`;
+      const typedOrder = vars.slice().reverse();
+      const texOriginal =
+        `${'\\int '.repeat(count)} ${exprToTex(expr)}\\, ${typedOrder.map(v => 'd'+v).join('\\, ')}`;
       const texSteps = intermediate.map((step, idx) => {
         const v = step.v;
         const texF = exprToTex(step.expr);
         return `<p><b>${idx+1}. Integrate w.r.t. ${v}:</b></p>
                 <p>$$${texF}$$</p>`;
       }).join('');
-
       const texFinal = exprToTex(finalExpr.toString());
 
       result.stepsHTML = `
@@ -398,8 +574,8 @@ function solveIntegralFromLine(rawLine){
       return result;
     }
 
-    /* 4. Not recognized as an integral */
-    throw new Error('Line not recognized as an integral. Start with "int " (→ ∫) or use integrate(...)/defint(...).');
+    /* 4. Not recognized */
+    throw new Error('Line not recognized as an integral. Start with "int" (→ ∫) or use integrate(...)/defint(...).');
 
   } catch (err) {
     const msg = 'Error: ' + (err && err.message ? err.message : String(err));
@@ -415,22 +591,21 @@ editor.addEventListener('keydown', function(e){
     e.preventDefault();
 
     const value = editor.value;
-    const pos = editor.selectionStart;
+    const pos   = editor.selectionStart;
 
-    // locate current line
     const lineStart = value.lastIndexOf('\n', pos-1) + 1;
-    let lineEnd = value.indexOf('\n', pos);
+    let lineEnd     = value.indexOf('\n', pos);
     if (lineEnd === -1) lineEnd = value.length;
 
     const line = value.slice(lineStart, lineEnd);
 
-    // If line is empty, just insert a normal newline
     if (!line.trim()) {
       const before = value.slice(0, pos);
       const after  = value.slice(pos);
       editor.value = before + '\n' + after;
       const newPos = pos + 1;
       editor.selectionStart = editor.selectionEnd = newPos;
+      updatePreview();
       return;
     }
 
@@ -438,18 +613,15 @@ editor.addEventListener('keydown', function(e){
     lastAnswer = answer;
     updateSteps(stepsHTML);
 
-    // Insert answer two lines below the current line:
-    // [lineEnd]\n\n= answer
     const beforeLineEnd = value.slice(0, lineEnd);
     const afterLineEnd  = value.slice(lineEnd);
-    const insertion = '\n\n= ' + answer;
+    const insertion     = '\n\n= ' + answer;
 
     editor.value = beforeLineEnd + insertion + afterLineEnd;
-
-    // place caret at end of inserted answer line
     const newCaretPos = (beforeLineEnd + insertion).length;
     editor.selectionStart = editor.selectionEnd = newCaretPos;
 
+    updatePreview();
     flashStatus('Solved integral.');
   }
 });
@@ -459,6 +631,7 @@ document.getElementById('clearBtn').addEventListener('click', ()=>{
   editor.value = '';
   lastAnswer = '';
   updateSteps('');
+  updatePreview();
   flashStatus('Cleared.');
   editor.focus();
 });
@@ -486,6 +659,121 @@ document.getElementById('showStepsBtn').addEventListener('click', ()=>{
     if (window.MathJax && window.MathJax.typesetPromise) {
       MathJax.typesetPromise([stepsContent]).catch(()=>{});
     }
+  }
+});
+
+/* ===== Calculator (same behavior as your old mini calc) ===== */
+const calcDisplay = document.getElementById('calcDisplay');
+let calcBuffer    = '0';
+let calcFocused   = false;
+
+function setDisp(s){ calcDisplay.textContent = s; }
+function calcAppendKey(k){
+  if (k === 'C'){
+    calcBuffer = '0';
+    setDisp(calcBuffer);
+    return;
+  }
+  if (k === 'Backspace'){
+    calcBuffer = calcBuffer.length > 1 ? calcBuffer.slice(0,-1) : '0';
+    setDisp(calcBuffer);
+    return;
+  }
+  if (k === '=' || k === 'Enter'){
+    calcTryEval();
+    return;
+  }
+  const allowed = /[0-9.+\-*/]/;
+  if (!allowed.test(k)) return;
+  if (calcBuffer === '0' && /[0-9.]/.test(k)) calcBuffer = '';
+  const last = calcBuffer.slice(-1);
+  if (/[+\-*/]/.test(last) && /[+\-*/]/.test(k)){
+    if (!(k === '-' && (calcBuffer === '' || /[+\-*/(]$/.test(calcBuffer)))) return;
+  }
+  calcBuffer += k;
+  setDisp(calcBuffer);
+}
+function calcEvalExpr(s){
+  if (!/^[0-9.+\-*/\s]+$/.test(s)) return null;
+  const tokens = [];
+  let i=0;
+  while (i<s.length){
+    const ch = s[i];
+    if (/\s/.test(ch)){ i++; continue; }
+    if (/[+\-*/]/.test(ch)){ tokens.push(ch); i++; continue; }
+    if (/[0-9.]/.test(ch)){
+      let j=i, d=0;
+      while (j<s.length && /[0-9.]/.test(s[j])){
+        if (s[j]==='.') d++;
+        if (d>1) return null;
+        j++;
+      }
+      tokens.push(s.slice(i,j));
+      i=j;
+      continue;
+    }
+    return null;
+  }
+  const out = [];
+  for (let k=0;k<tokens.length;k++){
+    const t = tokens[k];
+    if (t === '-' && (k===0 || /[+\-*/]/.test(tokens[k-1]))){
+      const nxt = tokens[k+1];
+      if (nxt == null || !/^[0-9.]+$/.test(nxt)) return null;
+      out.push(String(-parseFloat(nxt)));
+      k++;
+    } else out.push(t);
+  }
+  const prec = {'+':1,'-':1,'*':2,'/':2};
+  const ops = [], rpn=[];
+  for (const t of out){
+    if (/^[0-9.\-]+$/.test(t) && !/^[+\-*/]$/.test(t)) rpn.push(parseFloat(t));
+    else if (t in prec){
+      while (ops.length && prec[ops[ops.length-1]]>=prec[t]) rpn.push(ops.pop());
+      ops.push(t);
+    } else return null;
+  }
+  while (ops.length) rpn.push(ops.pop());
+  const st=[];
+  for (const t of rpn){
+    if (typeof t === 'number') st.push(t);
+    else{
+      const b = st.pop(), a = st.pop();
+      if (a==null || b==null) return null;
+      st.push(t==='+'?a+b:t==='-'?a-b:t==='*'?a*b:a/b);
+    }
+  }
+  return st.length===1 ? st[0] : null;
+}
+function calcTryEval(){
+  const expr = calcBuffer;
+  const res  = calcEvalExpr(expr);
+  if (res==null || !isFinite(res)){
+    setDisp('Error');
+    calcBuffer='0';
+  } else {
+    let out = Math.round((res+Number.EPSILON)*1e12)/1e12;
+    out = out.toString();
+    setDisp(out);
+    calcBuffer = out;
+  }
+}
+
+document.querySelectorAll('.key').forEach(k=>{
+  k.addEventListener('click', ()=>calcAppendKey(k.getAttribute('data-key')));
+});
+calcDisplay.addEventListener('focus', ()=>{ calcFocused = true; });
+calcDisplay.addEventListener('blur',  ()=>{ calcFocused = false; });
+
+window.addEventListener('keydown', (e)=>{
+  if (!calcFocused) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  if ((/^[0-9]$/.test(k)) || k==='.' || k==='+' || k==='-' ||
+      k==='*' || k==='/' || k==='Enter' || k==='=' || k==='Backspace' ||
+      k==='c' || k==='C'){
+    e.preventDefault();
+    calcAppendKey(k === 'c' ? 'C' : k);
   }
 });
 
@@ -524,6 +812,9 @@ reportSubmit.addEventListener('click', ()=>{
   reportStatus.textContent  = 'Thanks! Your mail app should open — just hit send.';
   window.location.href = mailto;
 });
+
+/* Initial preview */
+updatePreview();
 </script>
 </body>
 </html>
